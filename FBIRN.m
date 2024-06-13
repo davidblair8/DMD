@@ -159,8 +159,9 @@ clear d i r
 %% Concatenate and index time series
 
 % rename FNC data
-FNC.subj = DFNC_FBIRN;
-FNC.full = cell2mat(DFNC_FBIRN);
+FNC.subj = cellfun(@transpose, DFNC_FBIRN, 'UniformOutput',false);
+FNC.full = cell2mat(DFNC_FBIRN)';
+clear DFNC_FBIRN
 
 % convert variables to row form
 I.subject = str2double(string(analysis_data.Properties.RowNames)');
@@ -224,14 +225,21 @@ clear fList nIter a k n
 %% Isolate components & activity from dFNC
 
 % extract components & activities from dFNC
-[Phi, mu, lambda, diagS, x0] = DMD(FNC.full);
+Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+p_mat = nan(N.TR-1, N.ROI, N.ROI, sum(N.subjects{:,:}));
+for s = 1:sum(N.subjects{:,:})
+    [Phi(:,:,s), mu, lambda, diagS, x0] = DMD(FNC.subj{s});
+    p_mat(:,:,:,s) = icatb_vec2mat(squeeze(Phi(:,:,s)'), 0);
+end
+p_mat = permute(p_mat, [2 3 1 4]);
+clear s
 
 % visualize eigenvalue (power) spectrum
 
 % Check goodness of reconstruction
 
 
-%% Test for group-level changes
+%% Test for group-level changes in power spectra
 
 
 %% Regress power spectra against clinical variables
@@ -250,8 +258,6 @@ for n = 1:numel(labels.FDs)
 end
 
 % Compile spectral power arrays
-
-
 
 
 
