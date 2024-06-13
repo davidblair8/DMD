@@ -9,8 +9,8 @@
 clear; close all; clc
 
 % Shuffle random seed.  Necessary to avoid repeating random seeds across parallel computations.
-rng('default');
-rng('shuffle');
+rng("default");
+rng("shuffle");
 
 % Find general path (enclosing folder of current directory)
 pth{1} = string(strsplit(pwd, filesep));
@@ -19,15 +19,16 @@ pth{2,1} = fullfile(pth{1}{1:end-1});
 pth{1,1} = fullfile(pth{1}{1:end-2});
 
 % Set data-specific subdirectories
-pth{4,1} = fullfile(pth{2}, 'Data');
-pth{5,1} = fullfile(pth{3}, 'Results');
+pth{4,1} = fullfile(pth{2}, "Data");
+pth{5,1} = fullfile(pth{3}, "Results");
 
 % List relevant paths
-fpth{1,1} = 'Functions';
-fpth{2,1} = 'spm12';
-fpth{3,1} = fullfile('gift','GroupICAT','icatb');
-fpth{4,1} = 'permutationTest';
-fpth{5,1} = 'BCT';
+fpth{1,1} = "Functions";
+fpth{2,1} = fullfile("MATLAB","spm12");
+fpth{3,1} = fullfile("MATLAB","dmd-neuro");
+fpth{4,1} = fullfile("MATLAB","gift","GroupICAT","icatb");
+fpth{5,1} = fullfile("MATLAB","permutationTest");
+fpth{6,1} = fullfile("MATLAB","BCT");
 
 % Add relevant paths
 addpath(genpath(fullfile(pth{2}, fpth{1})));
@@ -41,8 +42,8 @@ clear fpth k op
 %% Load and sort data
 
 % Load formatted dFNC data
-load(fullfile(pth{3}, 'FBIRN_DFNC_table.mat'));
-load(fullfile(pth{3}, 'head_motion_meanFD.mat'));
+load(fullfile(pth{2}, "Data", "FBIRN_DFNC_table.mat"));
+load(fullfile(pth{2}, "Data", "head_motion_meanFD.mat"));
 
 % Confirm that IDs, data are properly indexed
 assert(all(str2double(string(cell2mat(analysis_ID))) == str2double(analysis_data.Properties.RowNames)), "Data labels are not properly ordered!");
@@ -99,8 +100,8 @@ clear I d j i
 analysis_data{:,:}(analysis_data{:,:} == -9999) = NaN;
 
 % Identify table variables to change
-i(1,:) = contains(analysis_data.Properties.VariableNames, 'diagnosis');
-i(2,:) = contains(analysis_data.Properties.VariableNames, 'gender');
+i(1,:) = contains(analysis_data.Properties.VariableNames, "diagnosis");
+i(2,:) = contains(analysis_data.Properties.VariableNames, "gender");
 
 % generate string arrays
 groups = labels.diagnosis(analysis_data{:,i(1,:)});
@@ -121,7 +122,7 @@ analysis_data = renamevars(analysis_data, ["age" "diagnosis(1:sz; 2:hc)" "gender
 %% Set region labels & maps
 
 % Load functional network labels
-labels.FNC = readtable(fullfile(pth{3}, 'NeuroMark_FNC_labels.xlsx')); % NeuroMark functional network labels & locations
+labels.FNC = readtable(fullfile(pth{2}, "Data", "NeuroMark_FNC_labels.xlsx")); % NeuroMark functional network labels & locations
 labels.FNC = renamevars(labels.FNC, "SelectedComponentsAsRegionsOfInterest", "Functional Networks");
 
 % Remove borders between functional domains
