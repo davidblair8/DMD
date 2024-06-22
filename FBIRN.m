@@ -226,17 +226,52 @@ clear fList nIter a k n
 
 % extract components & activities from dFNC
 Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-p_mat = nan(N.TR-1, N.ROI, N.ROI, sum(N.subjects{:,:}));
+mu = nan(N.TR-1, sum(N.subjects{:,:}));
+lambda = nan(N.TR-1, sum(N.subjects{:,:}));
+diagS = nan(N.TR-1, sum(N.subjects{:,:}));
+x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
 for s = 1:sum(N.subjects{:,:})
-    [Phi(:,:,s), mu, lambda, diagS, x0] = DMD(FNC.subj{s});
-    p_mat(:,:,:,s) = icatb_vec2mat(squeeze(Phi(:,:,s)'), 0);
+    [Phi(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s});
 end
-p_mat = permute(p_mat, [2 3 1 4]);
 clear s
 
-% visualize eigenvalue (power) spectrum
+% compute eigenvalue spectra
+spect.mu = mu.*conj(mu);                % the fourier spectrum of modes (mu = log(lambda)/dt)
+spect.lambda = lambda.*conj(lambda);    % DMD spectrum of modes 
+spect.Phi = Phi.*conj(Phi);             % the modes
+
+% compute DMD spectrum
+[f, P, F(1)] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1); % power
+phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1)));         % phase
+
+% visualize dominant modes
+[f, i, irev] = unique(f);
+Phi_sort = Phi(:,i,1);
+phi_sort = phi(:,i,1);
+for j = 1:nnz(f < 0.15)
+    Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j,1)));
+    phase_mat = icatb_vec2mat(squeeze(phi_sort(:,j,1)));
+    F(j+1) = figure; F(j+1).OuterPosition = [1 1 1365 1055];
+    display_FNC(real(Phi_mat), [0.25 1.5]); title(strjoin(["Mode (Real Part) of Frequency", num2str(f(j))])); hold on;
+    F(j+2) = figure; F(j+2).OuterPosition = [1 1 1365 1055];
+    display_FNC(real(phase_mat), [0.25 1.5], [0 2*pi]); title(strjoin(["Phases at Frequency", num2str(f(j))])); hold on;
+end
+clear i j Phi_mat phase_mat Phi_sort phi_sort
+% F(3:2:nnz(f < 0.15)) = [];
 
 % Check goodness of reconstruction
+[Xhat, z0] = DMD_recon(Phi(:,:,1), lambda(:,1), x0(:,1), N.TR);
+e = FNC.subj{1}-Xhat;
+msqe = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1365 1055];
+stem(msqe); axis tight;
+xlabel('samples'); ylabel('MSE');
+title("MSE per sample");
+
+% save results
+savefig(F, fileName, 'compact');
+clear F; close all
+save(fileName);
 
 
 %% Test for group-level changes in power spectra
