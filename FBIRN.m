@@ -282,10 +282,6 @@ P = P(i);
 Phi_sort = Phi_sort(:,i,1);
 phi_sort = phi_sort(:,i,1);
 
-% get figure color ranges
-l.r = max(abs(real(Phi_sort(:,2:end))), [], 'all');
-l.i = max(abs(imag(Phi)), [], 'all');
-
 % Visualize static mode
 Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,1,1)));
 phase_mat = icatb_vec2mat(squeeze(phi_sort(:,1,1)));
@@ -300,13 +296,23 @@ for j = 2:nnz(cumsum(P)./max(cumsum(P)) < 0.9)
     Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j,1)));
     phase_mat = icatb_vec2mat(squeeze(phi_sort(:,j,1)));
     F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
-    subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5], [-l.r l.r]); title(strjoin({'Mode (Real Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
-    subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-l.i l.i]); title(strjoin({'Mode (Imaginary Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
+    subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title(strjoin({'Mode (Real Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
+    subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5]); title(strjoin({'Mode (Imaginary Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
 
     F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
     display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title(strjoin({'Phases at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
 end
 clear i j Phi_mat phase_mat Phi_sort phi_sort
+
+% get amplitudes as function of frequency
+l.r = max(abs(real(Phi_sort(:,:,1))));
+l.i = max(abs(imag(Phi_sort(:,:,1))));
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
+plot(f, l.r, 'r'); hold on
+plot(f, l.i, 'b');
+title('Absolute Amplitudes by Frequency');
+xlabel('Frequency (Hz)'); ylabel('Amplitude');
+legend('Real','Imaginary');
 
 % save results
 savefig(F, fileName, 'compact');
