@@ -233,7 +233,26 @@ x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
 for s = 1:sum(N.subjects{:,:})
     [Phi(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s});
 end
+phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1))); % phase
 clear s
+
+% Compute MSE per sample
+[Xhat, z0] = DMD_recon(Phi(:,:,1), lambda(:,1), x0(:,1), N.TR);
+e = FNC.subj{1}-real(Xhat);
+msqe = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+
+% Check goodness of reconstruction
+F = figure; F(numel(F)).OuterPosition = [1 1 1150 1055];
+subplot(2,2,1);                 % actual sFNC
+display_FNC(icatb_vec2mat(mean(FNC.subj{1},2)), [0.25 1.5]);
+title("Original sFNC"); hold on;
+subplot(2,2,2);                 % estimated sFNC
+display_FNC(icatb_vec2mat(real(mean(Xhat,2))), [0.25 1.5]);
+title("Reconstructed sFNC"); hold on;
+subplot(2,2,[3 4]);                 % MSE per sample
+stem(msqe); axis tight; hold on
+xlabel('samples'); ylabel('MSE');
+title("MSE per sample");
 
 % compute eigenvalue spectra
 spect.mu = mu.*conj(mu);                % the fourier spectrum of modes (mu = log(lambda)/dt)
@@ -241,36 +260,57 @@ spect.lambda = lambda.*conj(lambda);    % DMD spectrum of modes
 spect.Phi = Phi.*conj(Phi);             % the modes
 
 % compute DMD spectrum
-[f, P, F(1)] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1); % power
-phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1)));         % phase
+[f, P, F(numel(F)+1)] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1);  % power
+F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
+title("Mode Power Spectrum");
 
-% visualize dominant modes
-[f, i, irev] = unique(f);
+% Compute cumulative power of the modes
+[f, i] = sort(f);
+P = P(i);
 Phi_sort = Phi(:,i,1);
 phi_sort = phi(:,i,1);
-for j = 1:nnz(f < 0.15)
+F(numel(F)+1) = figure;
+plot(f, cumsum(P)./max(cumsum(P),[],'all')); hold on;
+plot([min(f) max(f)], [0.9 0.9], '-r');
+xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
+title("Cumulative Power of the Frequencies");
+legend("Cumulative Sum", "90% of Power");
+
+% remove duplicate (negative) modes
+[f, i, irev] = unique(f);
+P = P(i);
+Phi_sort = Phi_sort(:,i,1);
+phi_sort = phi_sort(:,i,1);
+
+% get figure color ranges
+l.r = max(abs(real(Phi_sort(:,2:end))), [], 'all');
+l.i = max(abs(imag(Phi)), [], 'all');
+
+% Visualize static mode
+Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,1,1)));
+phase_mat = icatb_vec2mat(squeeze(phi_sort(:,1,1)));
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
+subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title('Mode (Real Part) at \omega = 0'); hold on;
+subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-l.i l.i]); title('Mode (Imaginary Part) at \omega = 0'); hold on;
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
+display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title('Phases at \omega = 0'); hold on;
+
+% visualize dominant harmonic modes
+for j = 2:nnz(cumsum(P)./max(cumsum(P)) < 0.9)
     Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j,1)));
     phase_mat = icatb_vec2mat(squeeze(phi_sort(:,j,1)));
-    F(j+1) = figure; F(j+1).OuterPosition = [1 1 1365 1055];
-    display_FNC(real(Phi_mat), [0.25 1.5]); title(strjoin(["Mode (Real Part) of Frequency", num2str(f(j))])); hold on;
-    F(j+2) = figure; F(j+2).OuterPosition = [1 1 1365 1055];
-    display_FNC(real(phase_mat), [0.25 1.5], [0 2*pi]); title(strjoin(["Phases at Frequency", num2str(f(j))])); hold on;
+    F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
+    subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5], [-l.r l.r]); title(strjoin({'Mode (Real Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
+    subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-l.i l.i]); title(strjoin({'Mode (Imaginary Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
+
+    F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
+    display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title(strjoin({'Phases at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
 end
 clear i j Phi_mat phase_mat Phi_sort phi_sort
-% F(3:2:nnz(f < 0.15)) = [];
-
-% Check goodness of reconstruction
-[Xhat, z0] = DMD_recon(Phi(:,:,1), lambda(:,1), x0(:,1), N.TR);
-e = FNC.subj{1}-Xhat;
-msqe = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
-F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1365 1055];
-stem(msqe); axis tight;
-xlabel('samples'); ylabel('MSE');
-title("MSE per sample");
 
 % save results
 savefig(F, fileName, 'compact');
-clear F; close all
+clear F; % close all
 save(fileName);
 
 
