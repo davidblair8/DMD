@@ -225,34 +225,31 @@ clear fList nIter a k n
 %% Isolate components & activity from dFNC
 
 % extract components & activities from dFNC
-Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+SVD = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+Hu = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+corrphi = nan(2, 2, sum(N.subjects{:,:}));
 mu = nan(N.TR-1, sum(N.subjects{:,:}));
 lambda = nan(N.TR-1, sum(N.subjects{:,:}));
 diagS = nan(N.TR-1, sum(N.subjects{:,:}));
 x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
 for s = 1:sum(N.subjects{:,:})
-    [Phi(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s});
+    [SVD(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s}, 'dt',1);
+    [Hu(:,:,s), ~, ~, ~, ~] = DMD_Hu(FNC.subj{s}, 'dt',1);
+    corrphi(:,:,s) = corrcoef(SVD(:,:,s), Hu(:,:,s));
 end
-phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1))); % phase
 clear s
 
-% Compute MSE per sample
-[Xhat, z0] = DMD_recon(Phi(:,:,1), lambda(:,1), x0(:,1), N.TR);
-e = FNC.subj{1}-real(Xhat);
-msqe = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+% locate modal non-matches
+f = nnz((abs(corrphi-1) > eps));
+if f == 0
+    Phi = Hu;
+    clear SVD Hu
+else
+    error("DMD methods in conflict!");
+end
 
-% Check goodness of reconstruction
-F = figure; F(numel(F)).OuterPosition = [1 1 1150 1055];
-subplot(2,2,1);                 % actual sFNC
-display_FNC(icatb_vec2mat(mean(FNC.subj{1},2)), [0.25 1.5]);
-title("Original sFNC"); hold on;
-subplot(2,2,2);                 % estimated sFNC
-display_FNC(icatb_vec2mat(real(mean(Xhat,2))), [0.25 1.5]);
-title("Reconstructed sFNC"); hold on;
-subplot(2,2,[3 4]);                 % MSE per sample
-stem(msqe); axis tight; hold on
-xlabel('samples'); ylabel('MSE');
-title("MSE per sample");
+
+%% Compute spectra
 
 % compute eigenvalue spectra
 spect.mu = mu.*conj(mu);                % the fourier spectrum of modes (mu = log(lambda)/dt)
@@ -260,21 +257,160 @@ spect.lambda = lambda.*conj(lambda);    % DMD spectrum of modes
 spect.Phi = Phi.*conj(Phi);             % the modes
 
 % compute DMD spectrum
-[f, P, F(numel(F)+1)] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1);  % power
+[f, P, F] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1);  % power
 F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
 title("Mode Power Spectrum");
 
+% Compute phases
+phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1)));
+
 % Compute cumulative power of the modes
-[f, i] = sort(f);
-P = P(i);
+[fc, i] = sort(f,1);
+Pc = P(i);
 Phi_sort = Phi(:,i,1);
+lambda_sort = lambda(i,:);
 phi_sort = phi(:,i,1);
-F(numel(F)+1) = figure;
-plot(f, cumsum(P)./max(cumsum(P),[],'all')); hold on;
-plot([min(f) max(f)], [0.9 0.9], '-r');
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1055 1055];
+plot(fc, cumsum(Pc)./max(cumsum(Pc),[],'all')); hold on;
+plot([min(fc) max(fc)], [0.9 0.9], '-r');
 xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
-title("Cumulative Power of the Frequencies");
+title("Cumulative Power of the Frequencie");
 legend("Cumulative Sum", "90% of Power");
+clear Pc fc
+
+
+%% Check reconstruction error
+
+% Set number of modes to use in reconstruction
+N.modes = 3;
+
+% Visualize actual sFNC
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1055 1055];
+display_FNC(icatb_vec2mat(mean(FNC.subj{1},2)), [0.25 1.5]);
+title("Original sFNC"); hold on;
+
+% Compare method reconstruction
+Phi_sort = Phi(:,i,1);
+
+% Compute MSE per sample (full)
+[Xhat, ~] = DMD_recon(Phi_sort(:,:,1), lambda_sort(:,1), x0(:,1), N.TR);
+e = FNC.subj{1}-real(Xhat);
+msqe.full = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+
+% Visualize estimated sFNC (full)
+F(numel(F)+ 1) = figure;
+F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
+subplot(2,2,1);
+display_FNC(icatb_vec2mat(real(mean(Xhat,2))), [0.25 1.5]);
+title("Reconstructed sFNC (full)"); hold on;
+
+% Visualize MSE per sample (full reconstruction)
+subplot(2,2,3);
+stem(msqe.full); axis tight; hold on
+xlabel('samples'); ylabel('MSE');
+title("Reconstructed sFNC (full)"); hold on;
+
+% Compute MSE per sample (partial)
+[Xhat, ~] = DMD_recon(Phi_sort(:,1:N.modes,1), lambda_sort(1:N.modes,1), x0(:,1), N.TR);    % first five modes
+e = FNC.subj{1}-real(Xhat);
+msqe.partial = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+
+% Visualize estimated sFNC (partial)
+subplot(2,2,2);
+display_FNC(icatb_vec2mat(real(mean(Xhat,2))), [0.25 1.5]);
+title(strjoin(["Reconstructed sFNC (first", num2str(N.modes), "modes)"])); hold on;
+
+% Visualize MSE per sample (partial reconstruction)
+subplot(2,2,4);
+stem(msqe.partial); axis tight; hold on
+xlabel('samples'); ylabel('MSE');
+title(strjoin(["MSE per sample (first", num2str(N.modes), "modes)"]));
+
+
+%% Plot eigenvalues on unit circle
+
+% Separate eigenvalues into real, imaginary parts
+i = imag(lambda(:,1));
+r = real(lambda(:,1));
+c(:,1) = abs(lambda(:,1)) > 1;
+c(:,2) = abs(lambda(:,1)) < 1;
+c(:,3) = abs(lambda(:,1)) == 1;
+
+% Plot eigenvalues on unit circle
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1055 1055]; hold on
+s(1) = scatter(r(c(:,1)), i(c(:,1)), 'MarkerFaceColor','r');
+s(2) = scatter(r(c(:,2)), i(c(:,2)), 'MarkerFaceColor','b');
+s(3) = scatter(r(c(:,3)), i(c(:,3)), 'MarkerFaceColor','g');
+% scatter(r, i, 'MarkerEdgeColor','k');
+
+% Plot unit circle in real, imaginary space
+theta = 0:0.1:2*pi+0.1;
+x = cos(theta); y = sin(theta);
+plot(x, y, '-k');
+xlabel("Real"); ylabel("Imaginary");
+xlim([-1 1]); ylim([-1 1]);
+legend(s, {'\lambda > 1', '\lambda < 1', '\lambda = 1'});
+
+
+%% Plot FN time courses from single module (per mode)
+
+% set mask for mode 1 (omega = 0)
+clear r c
+r(1,:) = [4, 5, 6, 7];
+c(1,:) = [3, 3, 3, 3];
+
+% set mask for mode 2 (omega = 0.012811)
+r(2,:) = [25, 25, 25, 25];
+c(2,:) = [20, 21, 22, 23];
+
+% set mask for mode 3 (omega = 0.024677)
+r(3,:) = [8, 8, 8, 8];
+c(3,:) = [3, 4, 5, 6];
+
+% set mask for mode 4 (omega = 0.03742)
+r(4,:) = [9, 9, 9, 9];
+c(4,:) = [3, 4, 5, 6];
+
+% set mask for mode 5 (omega = 0.052477)
+r(5,:) = [11, 11, 11, 11];
+c(5,:) = [3, 4, 5, 6];
+
+% set mask for mode 6 (omega = 0.065494)
+r(6,:) = [36, 36, 36, 36];
+c(6,:) = [27, 28, 29, 30];
+
+% convert masks to linear indices
+m = zeros(size(c,1), N.ROI, N.ROI);
+i = nan(size(c))';
+for k = 1:size(c,1)
+    m(k, r(k,:), c(k,:)) = 1;
+    n = squeeze(m(k,:,:));
+    e = tril(ones(N.ROI), -1);
+    n = n(e==1);
+    i(:,k) = find(n);
+end
+
+% Plot original FN courses over time
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1150 1055];
+plot(1:N.TR, FNC.subj{1}(i(:,1),:)); hold on;
+title(strjoin("Original FNC Values"));
+xlabel("Time Points"); ylabel("Real Amplitude");
+legend(num2str(i));
+
+% Plot FN courses over time as a function of number of modes
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
+for k = 1:size(c,1)
+    [Xhat, ~] = DMD_recon(Phi_sort(:,k,1), lambda_sort(k,1), x0(:,1), N.TR);    % first five modes
+    subplot(2,3,k);
+    plot(1:N.TR, Xhat(i(:,k),:)); hold on;
+    title(strjoin(["Reconstructed FNC Values for FNs at Mode", num2str(k)]));
+    xlabel("Time Points"); ylabel("Real Amplitude");
+    legend(num2str(i(:,k)));
+end
+clear i r c k m n e
+
+
+%% Visualize modes
 
 % remove duplicate (negative) modes
 [f, i, irev] = unique(f);
@@ -282,12 +418,16 @@ P = P(i);
 Phi_sort = Phi_sort(:,i,1);
 phi_sort = phi_sort(:,i,1);
 
+% get amplitudes as function of frequency
+l.r = max(abs(real(Phi_sort(:,:,1))));
+l.i = max(abs(imag(Phi_sort(:,:,1))));
+
 % Visualize static mode
 Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,1,1)));
 phase_mat = icatb_vec2mat(squeeze(phi_sort(:,1,1)));
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
 subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title('Mode (Real Part) at \omega = 0'); hold on;
-subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-l.i l.i]); title('Mode (Imaginary Part) at \omega = 0'); hold on;
+subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(abs(l.i)) max(abs(l.i))]); title('Mode (Imaginary Part) at \omega = 0'); hold on;
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
 display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title('Phases at \omega = 0'); hold on;
 
@@ -304,15 +444,16 @@ for j = 2:nnz(cumsum(P)./max(cumsum(P)) < 0.9)
 end
 clear i j Phi_mat phase_mat Phi_sort phi_sort
 
-% get amplitudes as function of frequency
-l.r = max(abs(real(Phi_sort(:,:,1))));
-l.i = max(abs(imag(Phi_sort(:,:,1))));
+% visualize amplitudes as function of frequency
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
 plot(f, l.r, 'r'); hold on
 plot(f, l.i, 'b');
 title('Absolute Amplitudes by Frequency');
 xlabel('Frequency (Hz)'); ylabel('Amplitude');
 legend('Real','Imaginary');
+
+%% Visualize reconstruction using individual modes
+
 
 % save results
 savefig(F, fileName, 'compact');
@@ -421,7 +562,7 @@ clear k ts fname network_names n j c y dim
 % Save figures
 savefig(F, fullfile(pth{4}, fileName), 'compact');
 for c = 1:numel(F)
-    saveas(F(c), fullfile(pth{4}, "Figures", strjoin([fileName, num2str(c)], '-')), 'svg');
+    saveas(F(c), fullfile(pth{3}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
 end
 clear c F a ax axes
 
