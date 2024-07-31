@@ -122,7 +122,7 @@ analysis_data = renamevars(analysis_data, ["age" "diagnosis(1:sz; 2:hc)" "gender
 %% Set region labels & maps
 
 % Load functional network labels
-labels.FNC = readtable(fullfile(pth{2}, "Data", "NeuroMark_FNC_labels.xlsx")); % NeuroMark functional network labels & locations
+labels.FNC = readtable(fullfile(pth{4}, "NeuroMark_FNC_labels.xlsx")); % NeuroMark functional network labels & locations
 labels.FNC = renamevars(labels.FNC, "SelectedComponentsAsRegionsOfInterest", "Functional Networks");
 
 % Remove borders between functional domains
@@ -207,7 +207,7 @@ I = struct2table(I);
 fileName = "test"; % strjoin(["DMD", strcat(num2str(N.IC), "ICs")], "_");
 
 % Get file list
-fList = dir(fullfile(pth{4}, strcat(strjoin([fileName, "iteration"], '_'), '*.mat')));
+fList = dir(fullfile(pth{5}, strcat(strjoin([fileName, "iteration"], '_'), '*.mat')));
 fList = struct2table(fList);
 
 % Set iteration number
@@ -225,24 +225,22 @@ clear fList nIter a k n
 %% Isolate components & activity from dFNC
 
 % Preallocate arrays
-SVD = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
 mu = nan(N.TR-1, sum(N.subjects{:,:}));
 lambda = nan(N.TR-1, sum(N.subjects{:,:}));
 diagS = nan(N.TR-1, sum(N.subjects{:,:}));
 x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
-% Hu = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-% corrphi = nan(2, 2, sum(N.subjects{:,:}));
 
 % Run DMD (Hu formulation)
 for s = 1:sum(N.subjects{:,:})
-    % Generate X, Y matrices
-    X = FNC.subj{s}(1:2:N.TR);
-    Y = FNC.subj{s}(2:2:N.TR);
+    % Generate subject-level X, Y matrices
+    X = FNC.subj{s}(:, 1:N.TR-1);
+    Y = FNC.subj{s}(:, 2:N.TR);
 
     % Run DMD
-    [SVD(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s}, 'dt',2);
+    [Phi(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(X, Y, 'dt',2);
 end
-clear s
+clear s X Y
 
 
 %% Compute spectra
@@ -447,14 +445,14 @@ legend('Real','Imaginary');
 %% Save results & figure(s)
 
 % Save figures
-savefig(F, fullfile(pth{3}, fileName), 'compact');
+savefig(F, fullfile(pth{5}, fileName), 'compact');
 for c = 1:numel(F)
-    saveas(F(c), fullfile(pth{3}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
-    saveas(F(c), fullfile(pth{3}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
+    saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
+    saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
 end
 clear c F a ax axes
 
 % Save files
 N.fig = N.fig - 1;
 clear ts;
-save(fullfile(pth{3}, fileName));
+save(fullfile(pth{5}, fileName));
