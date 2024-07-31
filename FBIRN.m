@@ -224,29 +224,25 @@ clear fList nIter a k n
 
 %% Isolate components & activity from dFNC
 
-% extract components & activities from dFNC
+% Preallocate arrays
 SVD = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-Hu = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-corrphi = nan(2, 2, sum(N.subjects{:,:}));
 mu = nan(N.TR-1, sum(N.subjects{:,:}));
 lambda = nan(N.TR-1, sum(N.subjects{:,:}));
 diagS = nan(N.TR-1, sum(N.subjects{:,:}));
 x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
+% Hu = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+% corrphi = nan(2, 2, sum(N.subjects{:,:}));
+
+% Run DMD (Hu formulation)
 for s = 1:sum(N.subjects{:,:})
-    [SVD(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s}, 'dt',1);
-    [Hu(:,:,s), ~, ~, ~, ~] = DMD_Hu(FNC.subj{s}, 'dt',1);
-    corrphi(:,:,s) = corrcoef(SVD(:,:,s), Hu(:,:,s));
+    % Generate X, Y matrices
+    X = FNC.subj{s}(1:2:N.TR);
+    Y = FNC.subj{s}(2:2:N.TR);
+
+    % Run DMD
+    [SVD(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(FNC.subj{s}, 'dt',2);
 end
 clear s
-
-% locate modal non-matches
-f = nnz((abs(corrphi-1) > eps));
-if f == 0
-    Phi = Hu;
-    clear SVD Hu
-else
-    error("DMD methods in conflict!");
-end
 
 
 %% Compute spectra
@@ -259,7 +255,9 @@ spect.Phi = Phi.*conj(Phi);             % the modes
 % compute DMD spectrum
 [f, P, F] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1);  % power
 F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
-title("Mode Power Spectrum");
+plot(sort(f), 1./(sort(f)), '--g');
+title("Mode Power Spectrum"); ylim([0 max(P)]);
+legend({'Frequency Power', '$\frac{1}{f}$'}, 'Interpreter','latex');
 
 % Compute phases
 phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1)));
@@ -284,47 +282,53 @@ clear Pc fc
 % Set number of modes to use in reconstruction
 N.modes = 3;
 
-% Visualize actual sFNC
-F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1055 1055];
-display_FNC(icatb_vec2mat(mean(FNC.subj{1},2)), [0.25 1.5]);
-title("Original sFNC"); hold on;
-
 % Compare method reconstruction
 Phi_sort = Phi(:,i,1);
 
-% Compute MSE per sample (full)
-[Xhat, ~] = DMD_recon(Phi_sort(:,:,1), lambda_sort(:,1), x0(:,1), N.TR);
-e = FNC.subj{1}-real(Xhat);
-msqe.full = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
-
-% Visualize estimated sFNC (full)
-F(numel(F)+ 1) = figure;
-F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
-subplot(2,2,1);
-display_FNC(icatb_vec2mat(real(mean(Xhat,2))), [0.25 1.5]);
-title("Reconstructed sFNC (full)"); hold on;
-
-% Visualize MSE per sample (full reconstruction)
-subplot(2,2,3);
-stem(msqe.full); axis tight; hold on
-xlabel('samples'); ylabel('MSE');
-title("Reconstructed sFNC (full)"); hold on;
+% Open figure (large)
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
 
 % Compute MSE per sample (partial)
-[Xhat, ~] = DMD_recon(Phi_sort(:,1:N.modes,1), lambda_sort(1:N.modes,1), x0(:,1), N.TR);    % first five modes
-e = FNC.subj{1}-real(Xhat);
+[Xhat.partial, ~] = DMD_recon(Phi_sort(:,1:N.modes,1), lambda_sort(1:N.modes,1), x0(:,1), N.TR);    % first five modes
+e = FNC.subj{1}-Xhat.partial;
 msqe.partial = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
 
 % Visualize estimated sFNC (partial)
-subplot(2,2,2);
-display_FNC(icatb_vec2mat(real(mean(Xhat,2))), [0.25 1.5]);
+subplot(2,3,1);
+display_FNC(real(icatb_vec2mat(mean(Xhat.partial,2))), [0.25 1.5]);
 title(strjoin(["Reconstructed sFNC (first", num2str(N.modes), "modes)"])); hold on;
 
 % Visualize MSE per sample (partial reconstruction)
-subplot(2,2,4);
+subplot(2,3,4);
 stem(msqe.partial); axis tight; hold on
 xlabel('samples'); ylabel('MSE');
 title(strjoin(["MSE per sample (first", num2str(N.modes), "modes)"]));
+
+% Compute MSE per sample (full)
+[Xhat.full, ~] = DMD_recon(Phi_sort(:,:,1), lambda_sort(:,1), x0(:,1), N.TR);
+e = FNC.subj{1}-Xhat.full;
+msqe.full = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+
+% Visualize estimated sFNC (full)
+subplot(2,3,2);
+display_FNC(real(icatb_vec2mat(mean(Xhat.full,2))), [0.25 1.5]);
+title("Reconstructed sFNC (full)"); hold on;
+
+% Visualize MSE per sample (full reconstruction)
+subplot(2,3,5);
+stem(msqe.full); axis tight; hold on
+xlabel('samples'); ylabel('MSE');
+title("MSE per sample (full reconstruction)");
+
+% Visualize actual sFNC
+subplot(2,3,6);
+display_FNC(icatb_vec2mat(mean(FNC.subj{1},2)), [0.25 1.5]); hold on;
+title("Original sFNC"); hold on;
+
+% Display difference between partial and full reconstructions
+subplot(2,3,3);
+display_FNC(real(icatb_vec2mat(mean(Xhat.full,2) - mean(Xhat.partial,2))), [0.25 1.5]); hold on;
+title('Full - Partial Reconstruction');
 
 
 %% Plot eigenvalues on unit circle
@@ -348,66 +352,53 @@ theta = 0:0.1:2*pi+0.1;
 x = cos(theta); y = sin(theta);
 plot(x, y, '-k');
 xlabel("Real"); ylabel("Imaginary");
-xlim([-1 1]); ylim([-1 1]);
+xlim([-1.1 1.1]); ylim([-1.1 1.1]);
 legend(s, {'\lambda > 1', '\lambda < 1', '\lambda = 1'});
 
 
 %% Plot FN time courses from single module (per mode)
 
-% set mask for mode 1 (omega = 0)
-clear r c
-r(1,:) = [4, 5, 6, 7];
-c(1,:) = [3, 3, 3, 3];
+% sort frequencies
+[f_sort, i] = unique(f);
+Phi_sort = Phi(:,i,1);
+lambda_sort = lambda(i,1);
 
-% set mask for mode 2 (omega = 0.012811)
-r(2,:) = [25, 25, 25, 25];
-c(2,:) = [20, 21, 22, 23];
-
-% set mask for mode 3 (omega = 0.024677)
-r(3,:) = [8, 8, 8, 8];
-c(3,:) = [3, 4, 5, 6];
-
-% set mask for mode 4 (omega = 0.03742)
-r(4,:) = [9, 9, 9, 9];
-c(4,:) = [3, 4, 5, 6];
-
-% set mask for mode 5 (omega = 0.052477)
-r(5,:) = [11, 11, 11, 11];
-c(5,:) = [3, 4, 5, 6];
-
-% set mask for mode 6 (omega = 0.065494)
-r(6,:) = [36, 36, 36, 36];
-c(6,:) = [27, 28, 29, 30];
+% set mask
+r = [6 6 6 7 7 7];
+c = [2 3 4 2 3 4];
+ind.rc = horzcat(r', c');
 
 % convert masks to linear indices
-m = zeros(size(c,1), N.ROI, N.ROI);
-i = nan(size(c))';
-for k = 1:size(c,1)
-    m(k, r(k,:), c(k,:)) = 1;
-    n = squeeze(m(k,:,:));
-    e = tril(ones(N.ROI), -1);
-    n = n(e==1);
-    i(:,k) = find(n);
-end
+m = zeros(N.ROI, N.ROI);
+m(r,c) = 1;
+ind.lin = find(m);
+
+% Plot mask
+F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
+subplot(2,4,1);
+imagesc(m); colormap bone; colorbar; pbaspect([1 1 1]);
+title("Timecourse Mask");
+xlabel("Neuromark Functional Networks");
+ylabel("Neuromark Functional Networks");
 
 % Plot original FN courses over time
-F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1150 1055];
-plot(1:N.TR, FNC.subj{1}(i(:,1),:)); hold on;
+subplot(2,4,5);
+plot(1:N.TR, FNC.subj{1}(ind.lin(:,1),:)); hold on;
 title(strjoin("Original FNC Values"));
 xlabel("Time Points"); ylabel("Real Amplitude");
-legend(num2str(i));
+legend(num2str(ind.rc));
 
 % Plot FN courses over time as a function of number of modes
-F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
-for k = 1:size(c,1)
-    [Xhat, ~] = DMD_recon(Phi_sort(:,k,1), lambda_sort(k,1), x0(:,1), N.TR);    % first five modes
-    subplot(2,3,k);
-    plot(1:N.TR, Xhat(i(:,k),:)); hold on;
-    title(strjoin(["Reconstructed FNC Values for FNs at Mode", num2str(k)]));
+ii = [2 3 4 6 7 8];
+for k = 1:length(c)
+    [Xhat, ~] = DMD_recon(Phi_sort(:,i(k+1),1), lambda_sort(i(k+1),1), x0(:,1), N.TR);    % first five modes
+    subplot(2,4,ii(k));
+    plot(1:N.TR, Xhat(ind.lin,:)); hold on;
+    title(strjoin(["Reconstructed FNC Values for FNs at f =", num2str(f_sort(k+1))]));
     xlabel("Time Points"); ylabel("Real Amplitude");
-    legend(num2str(i(:,k)));
+    legend(num2str(ind.rc));
 end
-clear i r c k m n e
+clear i ii ind r c k m n e Xhat Phi_sort f_sort lambda_sort
 
 
 %% Visualize modes
@@ -452,121 +443,18 @@ title('Absolute Amplitudes by Frequency');
 xlabel('Frequency (Hz)'); ylabel('Amplitude');
 legend('Real','Imaginary');
 
-%% Visualize reconstruction using individual modes
-
-
-% save results
-savefig(F, fileName, 'compact');
-clear F; % close all
-save(fileName);
-
-
-%% Test for group-level changes in power spectra
-
-
-%% Regress power spectra against clinical variables
-
-
-%% Visualise static FNCs and spectral power arrays
-
-% import NeuroMark templates from GIFT toolbox
-fname = fullfile(fileparts(which('gift.m')), 'icatb_templates', 'Neuromark_fMRI_1.0.nii');
-
-% convert network domain label format for connectogram
-network_names = cell(numel(labels.FDs), 2);
-for n = 1:numel(labels.FDs)
-    network_names{n,1} = string(labels.FDs{n,:});
-    network_names{n,2} = find(strcmpi(string(labels.FND{:,"Functional Networks"}), string(labels.FDs{n,:})))';
-end
-
-% Compile spectral power arrays
-
-
-
-%% Visualize modes with significant group-level power alterations
-
-% import NeuroMark templates from GIFT toolbox
-fname = fullfile(fileparts(which('gift.m')), 'icatb_templates', 'Neuromark_fMRI_1.0.nii');
-
-% convert network domain label format for connectogram
-network_names = cell(numel(labels.FDs), 2);
-for n = 1:numel(labels.FDs)
-    network_names{n,1} = string(labels.FDs{n,:});
-    network_names{n,2} = find(strcmpi(string(labels.FND{:,"Functional Networks"}), string(labels.FDs{n,:})))';
-end
-clear n fname
-
-
-%% Plot modes as combined plot
-
-% get screen dimensions
-dim = get(0,'screensize');
-
-% Horizontal
-F(N.fig) = figure; N.fig = N.fig + 1;
-F(N.fig-1).OuterPosition = [floor(dim(3)/2) 0 floor(dim(3)/2) dim(4)];
-F(N.fig-1).Color = 'black';
-for j = 1:N.IC
-    % Plot mode correlation matrices
-
-    % Plot spectral power as violin plots
-
-    % Plot mode connectograms
-    
-end
-
-% Save figure
-
-
-% Vertical
-F(N.fig) = figure; N.fig = N.fig + 1;
-F(N.fig-1).OuterPosition = get(0,'screensize'); F(N.fig-1).Color = 'black';
-for j = 1:N.IC
-    % Plot mode correlation matrices
-
-    % Plot spectral power as violin plots
-
-    % Plot mode connectograms
-    
-end
-
-% Save figure
-
-clear dim j
-
-% Save figure
-saveas(F(N.fig-1), fullfile("/Users/David/Library/CloudStorage/GoogleDrive-dblair@gsu.edu/My Drive/Calhoun/Results/Regression/Figures", strjoin([fileName, "vertical"], '-')), 'svg');
-% saveas(F(N.fig-1), fullfile(pth{4}, "Figures", strjoin([fileName, "vertical"], '-')), 'svg');
-
-
-%% Plot large mode matrices, connectograms, and power spectra
-
-% get screen dimensions
-dim = get(0,'screensize');
-
-for j = 1:N.IC
-    % source matrices
-    
-
-    % Plot entropies
-    
-
-    % Connectogram
-    
-end
-clear k ts fname network_names n j c y dim
-
 
 %% Save results & figure(s)
 
 % Save figures
-savefig(F, fullfile(pth{4}, fileName), 'compact');
+savefig(F, fullfile(pth{3}, fileName), 'compact');
 for c = 1:numel(F)
     saveas(F(c), fullfile(pth{3}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
+    saveas(F(c), fullfile(pth{3}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
 end
 clear c F a ax axes
 
 % Save files
 N.fig = N.fig - 1;
 clear ts;
-save(fullfile(pth{4}, fileName));
+save(fullfile(pth{3}, fileName));
