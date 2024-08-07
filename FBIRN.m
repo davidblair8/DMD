@@ -222,35 +222,93 @@ fileName = strjoin([fileName, strcat("iteration", num2str(nIter))], '_');
 clear fList nIter a k n
 
 
-%% Isolate components & activity from dFNC
+%% Isolate subject-level components & activity from dFNC
 
 % Preallocate arrays
-Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-mu = nan(N.TR-1, sum(N.subjects{:,:}));
-lambda = nan(N.TR-1, sum(N.subjects{:,:}));
-diagS = nan(N.TR-1, sum(N.subjects{:,:}));
-x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
+Phi.subj = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}), 2);
+mu.subj = nan(N.TR-1, sum(N.subjects{:,:}));
+lambda.subj = nan(N.TR-1, sum(N.subjects{:,:}));
+diagS.subj = nan(N.TR-1, sum(N.subjects{:,:}));
+x0.subj = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
+dstnc.subj = cell(sum(N.subjects{:,:}), 1);
 
-% Run DMD (Hu formulation)
+% Run subject-level DMD
 for s = 1:sum(N.subjects{:,:})
     % Generate subject-level X, Y matrices
     X = FNC.subj{s}(:, 1:N.TR-1);
     Y = FNC.subj{s}(:, 2:N.TR);
 
     % Run DMD
-    [Phi(:,:,s), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(X, Y, 'dt',2);
+    [Phi.subj(:,:,s,1), mu.subj(:,s), lambda.subj(:,s), diagS.subj(:,s), x0.subj(:,s)] = DMD(X, Y, 'dt',2);  % standard
+    [Phi.subj(:,:,s,2), ~, ~, ~, ~] = DMD(X, Y, 'dt',2, 'exact',true);                   % exact
+
+    % Compare exact vs. standard DMD
+    D = Phi.subj(:,:,s,1) - Phi.subj(:,:,s,2);
+    d = nnz(abs(D) <= eps);
+    if ~d
+        dstnc.subj{s} = [];
+    else
+        dstnc.subj{2} = abs(Phi.subj(:,:,2,1) - Phi.subj(:,:,2,2));
+    end
 end
-clear s X Y
+
+% Check if exact and standard SVD produce same outputs
+i = cellfun(@isempty, dstnc.subj);
+if nnz(i) == length(dstnc.subj)
+    Phi.subj = squeeze(Phi.subj(:,:,:,2));    % keep exact DMD
+    dstnc = rmfield(dstnc, "subj");
+end
+clear s X Y d D i
+
+
+%% Isolate group-level components & activity from dFNC
+
+% Preallocate arrays
+Phi.grp = nan(N.ROI*(N.ROI-1)/2, N.ROI*(N.ROI-1)/2, N.conditions, 2);
+mu.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
+lambda.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
+diagS.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
+x0.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
+dstnc.grp = cell(N.conditions, 1);
+
+% Run group-level DMD
+for g = 1:N.conditions
+    % Generate group-level X, Y matrices
+    X = FNC.subj(analysis_data{:,'Diagnosis'} == labels.diagnosis(g))';
+    Y = FNC.subj(analysis_data{:,'Diagnosis'} == labels.diagnosis(g))';
+    for s = 1:numel(X)
+        X{s} = X{s}(:, 1:N.TR-1);
+        Y{s} = Y{s}(:, 2:N.TR);
+    end
+    X = cell2mat(X);
+    Y = cell2mat(Y);
+
+    % Run DMD
+    [Phi.grp(:,:,g,1), mu.grp(:,g), lambda.grp(:,g), diagS.grp(:,g), x0.grp(:,g)] = DMD(X, Y, 'dt',2);  % standard
+    [Phi.grp(:,:,g,2), ~, ~, ~, ~] = DMD(X, Y, 'dt',2, 'exact',true);                   % exact
+
+    % Compare exact vs. standard DMD
+    D = Phi.grp(:,:,g,1) - Phi.grp(:,:,g,2);
+    d = nnz(abs(D) <= eps);
+    if ~d
+        dstnc.grp{g} = [];
+    else
+        dstnc.grp{g} = abs(Phi.grp(:,:,g,1) - Phi.grp(:,:,g,2));
+    end
+end
+
+% Check if exact and standard SVD produce same outputs
+i = cellfun(@isempty, dstnc.grp);
+if nnz(i) == length(dstnc.grp)
+    Phi.grp = squeeze(Phi.grp(:,:,:,2));    % keep exact DMD
+    dstnc = rmfield(dstnc, "grp");
+end
+clear g X Y d D i
 
 
 %% Compute spectra
 
-% compute eigenvalue spectra
-spect.mu = mu.*conj(mu);                % the fourier spectrum of modes (mu = log(lambda)/dt)
-spect.lambda = lambda.*conj(lambda);    % DMD spectrum of modes 
-spect.Phi = Phi.*conj(Phi);             % the modes
-
-% compute DMD spectrum
+% compute DMD spectrum for each subject
 [f, P, F] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1);  % power
 F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
 plot(sort(f), 1./(sort(f)), '--g');
@@ -261,18 +319,27 @@ legend({'Frequency Power', '$\frac{1}{f}$'}, 'Interpreter','latex');
 phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1)));
 
 % Compute cumulative power of the modes
-[fc, i] = sort(f,1);
-Pc = P(i);
-Phi_sort = Phi(:,i,1);
+[f_sort, i] = sort(f,1);
+P_sort = P(i);
 lambda_sort = lambda(i,:);
-phi_sort = phi(:,i,1);
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1055 1055];
-plot(fc, cumsum(Pc)./max(cumsum(Pc),[],'all')); hold on;
-plot([min(fc) max(fc)], [0.9 0.9], '-r');
+plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
+plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
 xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
-title("Cumulative Power of the Frequencie");
+title("Cumulative Power of the Frequencies");
 legend("Cumulative Sum", "90% of Power");
-clear Pc fc
+clear P_sort f_sort
+
+
+%% 
+
+% Compare subject modes to group modes (confirm in same order)
+dstnc.svg = cell(sum(N.subjects{:,:}), 1);
+for s = 1:sum(N.subjects{:,:})
+    i = find(strcmpi(analysis_data{7,'Diagnosis'}, labels.diagnosis));
+    dstnc.svg{s} = abs(Phi.subj(:,:,s) - Phi.grp(:,1:N.TR-1,i));
+end
+clear i
 
 
 %% Check reconstruction error
@@ -392,20 +459,20 @@ for k = 1:length(c)
     [Xhat, ~] = DMD_recon(Phi_sort(:,i(k+1),1), lambda_sort(i(k+1),1), x0(:,1), N.TR);    % first five modes
     subplot(2,4,ii(k));
     plot(1:N.TR, Xhat(ind.lin,:)); hold on;
-    title(strjoin(["Reconstructed FNC Values for FNs at f =", num2str(f_sort(k+1))]));
+    title("Reconstructed FNC Values", strjoin(["f =", num2str(f_sort(k+1)), "Hz"]));
     xlabel("Time Points"); ylabel("Real Amplitude");
     legend(num2str(ind.rc));
 end
-clear i ii ind r c k m n e Xhat Phi_sort f_sort lambda_sort
+clear i ii ind r c k m n e Xhat lambda_sort
 
 
 %% Visualize modes
 
 % remove duplicate (negative) modes
-[f, i, irev] = unique(f);
-P = P(i);
-Phi_sort = Phi_sort(:,i,1);
-phi_sort = phi_sort(:,i,1);
+[f_sort, i, irev] = unique(f);
+P_sort = P(i);
+Phi_sort = Phi(:,i,1);
+phi_sort = phi(:,i,1);
 
 % get amplitudes as function of frequency
 l.r = max(abs(real(Phi_sort(:,:,1))));
@@ -415,31 +482,34 @@ l.i = max(abs(imag(Phi_sort(:,:,1))));
 Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,1,1)));
 phase_mat = icatb_vec2mat(squeeze(phi_sort(:,1,1)));
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
-subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title('Mode (Real Part) at \omega = 0'); hold on;
-subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(abs(l.i)) max(abs(l.i))]); title('Mode (Imaginary Part) at \omega = 0'); hold on;
+subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title("Mode (Real Part)"); hold on;
+subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(abs(l.i)) max(abs(l.i))]); title("Mode (Imaginary Part)"); hold on;
+sgtitle(strjoin(["f =" , num2str(f_sort(1))]));
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
 display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title('Phases at \omega = 0'); hold on;
 
 % visualize dominant harmonic modes
-for j = 2:nnz(cumsum(P)./max(cumsum(P)) < 0.9)
+for j = 2:nnz(cumsum(P_sort)./max(cumsum(P_sort)) < 0.9)
     Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j,1)));
     phase_mat = icatb_vec2mat(squeeze(phi_sort(:,j,1)));
     F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1920 1055];
-    subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title(strjoin({'Mode (Real Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
-    subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5]); title(strjoin({'Mode (Imaginary Part) at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
+    subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title("Mode (Real Part)"); hold on;
+    subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5]); title("Mode (Imaginary Part)"); hold on;
+    sgtitle(strjoin(["f =" , num2str(f_sort(j))]));
 
     F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
-    display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title(strjoin({'Phases at \omega = ', num2str(2*f(j)), '\pi'}, '')); hold on;
+    display_FNC(real(phase_mat), [0.25 1.5], [-pi/2 pi/2]); title(strjoin({'Phases at \omega = ', num2str(2*f_sort(j)), '\pi'}, '')); hold on;
 end
-clear i j Phi_mat phase_mat Phi_sort phi_sort
 
 % visualize amplitudes as function of frequency
 F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1100 1055];
-plot(f, l.r, 'r'); hold on
-plot(f, l.i, 'b');
+plot(f_sort, l.r, 'r'); hold on
+plot(f_sort, l.i, 'b');
 title('Absolute Amplitudes by Frequency');
 xlabel('Frequency (Hz)'); ylabel('Amplitude');
 legend('Real','Imaginary');
+
+clear i j Phi_mat phase_mat Phi_sort phi_sort f_sort P_sort
 
 
 %% Save results & figure(s)
@@ -450,9 +520,8 @@ for c = 1:numel(F)
     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
 end
-clear c F a ax axes
+clear c F a ax axes ts
 
 % Save files
 N.fig = N.fig - 1;
-clear ts;
 save(fullfile(pth{5}, fileName));
