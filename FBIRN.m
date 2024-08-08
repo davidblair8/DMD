@@ -244,7 +244,7 @@ for s = 1:sum(N.subjects{:,:})
 
     % Compare exact vs. standard DMD
     D = Phi.subj(:,:,s,1) - Phi.subj(:,:,s,2);
-    d = nnz(abs(D) <= eps);
+    d = nnz(abs(D) >= eps);
     if ~d
         dstnc.subj{s} = [];
     else
@@ -257,6 +257,13 @@ i = cellfun(@isempty, dstnc.subj);
 if nnz(i) == length(dstnc.subj)
     Phi.subj = squeeze(Phi.subj(:,:,:,2));    % keep exact DMD
     dstnc = rmfield(dstnc, "subj");
+else
+    warning("DMD methods do not concur!");
+end
+
+% Compute spectra for each group
+for s = 1:sum(N.subjects{:,:})
+    [f.subj(:,s), P.subj(:,s), ~] = DMD_spectrum(Phi.grp(:,:,g), mu.grp(:,1), 'plotit',0);  % power
 end
 clear s X Y d D i
 
@@ -264,9 +271,9 @@ clear s X Y d D i
 %% Isolate group-level components & activity from dFNC
 
 % Preallocate arrays
-Phi.grp = nan(N.ROI*(N.ROI-1)/2, N.ROI*(N.ROI-1)/2, N.conditions, 2);
-mu.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
-lambda.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
+Phi.grp = nan(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions, 2);
+mu.grp = nan(N.TR-1, N.conditions);
+lambda.grp = nan(N.TR-1, N.conditions);
 diagS.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
 x0.grp = nan(N.ROI*(N.ROI-1)/2, N.conditions);
 dstnc.grp = cell(N.conditions, 1);
@@ -284,12 +291,12 @@ for g = 1:N.conditions
     Y = cell2mat(Y);
 
     % Run DMD
-    [Phi.grp(:,:,g,1), mu.grp(:,g), lambda.grp(:,g), diagS.grp(:,g), x0.grp(:,g)] = DMD(X, Y, 'dt',2);  % standard
-    [Phi.grp(:,:,g,2), ~, ~, ~, ~] = DMD(X, Y, 'dt',2, 'exact',true);                   % exact
+    [Phi.grp(:,:,g,1), mu.grp(:,g), lambda.grp(:,g), diagS.grp(:,g), x0.grp(:,g)] = DMD(X, Y, 'dt',2, 'r',N.TR-1);  % standard
+    [Phi.grp(:,:,g,2), ~, ~, ~, ~] = DMD(X, Y, 'dt',2, 'exact',true, 'r',N.TR-1);                                   % exact
 
     % Compare exact vs. standard DMD
     D = Phi.grp(:,:,g,1) - Phi.grp(:,:,g,2);
-    d = nnz(abs(D) <= eps);
+    d = nnz(abs(D) >= eps);
     if ~d
         dstnc.grp{g} = [];
     else
@@ -302,33 +309,31 @@ i = cellfun(@isempty, dstnc.grp);
 if nnz(i) == length(dstnc.grp)
     Phi.grp = squeeze(Phi.grp(:,:,:,2));    % keep exact DMD
     dstnc = rmfield(dstnc, "grp");
+else
+    warning("DMD methods do not concur!");
 end
-clear g X Y d D i
 
+% Compute spectra for each group
+f.grp = nan(N.TR-1, N.conditions);
+P.grp = nan(N.TR-1, N.conditions);
+for g = 1:N.conditions
+    [f.grp(:,g), P.grp(:,g), F(g)] = DMD_spectrum(Phi.grp(:,:,g), mu.grp(:,1), 'plotit',1);  % power
+    F(g).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
+    title(strjoin(["Power Spectrum for", labels.diagnosis(g)]));
+    xlim([min(f_sort) max(f_sort)]); % ylim([0 max(P.grp(g))]);
 
-%% Compute spectra
-
-% compute DMD spectrum for each subject
-[f, P, F] = DMD_spectrum(Phi(:,:,1), mu(:,1), 'plotit',1);  % power
-F(numel(F)).OuterPosition = [1 1 1440 1055]; hold on;   % increase figure size
-plot(sort(f), 1./(sort(f)), '--g');
-title("Mode Power Spectrum"); ylim([0 max(P)]);
-legend({'Frequency Power', '$\frac{1}{f}$'}, 'Interpreter','latex');
-
-% Compute phases
-phi = atan(imag(Phi(:,:,1))./real(Phi(:,:,1)));
-
-% Compute cumulative power of the modes
-[f_sort, i] = sort(f,1);
-P_sort = P(i);
-lambda_sort = lambda(i,:);
-F(numel(F)+1) = figure; F(numel(F)).OuterPosition = [1 1 1055 1055];
-plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
-plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
-xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
-title("Cumulative Power of the Frequencies");
-legend("Cumulative Sum", "90% of Power");
-clear P_sort f_sort
+    % Plot cumulative power of the modes
+    [f_sort, i] = sort(f.grp(:,g),1);
+    P_sort = P.grp(i,g);
+    F(g+N.conditions) = figure; F(g+N.conditions).OuterPosition = [1 1 1055 1055];
+    plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
+    plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
+    xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
+    xlim([min(f_sort) max(f_sort)]);
+    title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Patients"]));
+    legend("Cumulative Power", "90% of Power", 'Location','southeast');
+end
+clear g X Y d D i P_sort f_sort lambda_sort
 
 
 %% 
