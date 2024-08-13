@@ -55,15 +55,9 @@ clear FILE_ID
 analysis_data = [table(head_motion_meanFD, 'VariableNames',"Mean Head Motion"), analysis_data];
 clear head_motion_meanFD
 
-% % Sort data by site
-% [~, I(:,1)] = sort(analysis_data{:,"Site"});
-% analysis_data = analysis_data(I,:);
-% DFNC_FBIRN = DFNC_FBIRN(I,:);
-% clear I
-
 % Set diagnosis, gender labels
-labels.diagnosis = ["SZ";"HC"];
-labels.gender = ["M";"F"];
+labels.diagnosis = unique(analysis_data{:,'Diagnosis'});
+labels.gender = unique(analysis_data{:,'Gender'});
 labels.data = ["Diagnosis"; "Gender"];
 labels.methods = ["Standard"; "Exact"];
 
@@ -246,7 +240,7 @@ for g = 1:N.conditions
 
     % Run DMD
     for s = 1:numel(labels.methods)
-        [Phi(:,:,g,s), mu(:,g), lambda(:,g), diagS(:,g), x0(:,g)] = DMD(X, Y, 'dt',2, 'exact',strcmpi(labels.methods(s), "Exact"), 'r',N.TR-1);  % standard
+        [Phi(:,:,g,s), mu(:,g), lambda(:,g), diagS(:,g), x0(:,g)] = DMD(X, Y, 'dt',2, 'exact',logical(strcmpi(labels.methods(s),"Exact")), 'r',N.TR-1);  % standard
     end
 
     % Compare exact vs. standard DMD
@@ -297,8 +291,8 @@ clear i g s d
 i = true(numel(N.modes)+1, N.TR-1);
 [~, ind] = sort(P);
 for m = 1:numel(N.modes)
-    i(m, ind(1:N.modes(m),:)) = false;
-    i(m,:) = ~i(m,:);
+    i(m+1, ind(1:N.modes(m),:)) = false;
+    i(m+1,:) = ~i(m+1,:);
 end
 clear ind m
 
@@ -318,16 +312,11 @@ for g = 1:N.conditions
     for s = 1:numel(labels.methods)     % test both standard and exact DMD
 
         % Open figure (large)
-        F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1920 1055];
+        F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1055 1055];
         N.fig = N.fig + 1;
-
-        % % Visualize group sFNC
-        % subplot(3,3,1);
-        % display_FNC(icatb_vec2mat(mean(squeeze(mFNC(:,:,g)),2)), [0.25 1.5]); hold on;
-        % title(strjoin(["sFNC for", labels.diagnosis(g)])); hold on;
         
-        for m = 1:numel(N.modes)+1  % test reconstruction with several numbers of modes
-            
+        % test reconstruction with several numbers of modes
+        for m = 1:numel(N.modes)+1
             % compute reconstruction for each method & number of modes
             [Xhat(:,:,g,s,m), ~] = DMD_recon(Phi(:,:,g,s), lambda(:,g), x0(:,g), N.TR, 'keep_modes',i(m,:));
     
@@ -336,19 +325,19 @@ for g = 1:N.conditions
             msqe(:,g,s,m) = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
 
             % Visualize estimated sFNC
-            subplot(2, numel(N.modes)+2, m+1);
+            subplot(2, numel(N.modes)+1, m);
             display_FNC(real(icatb_vec2mat(mean(squeeze(Xhat(:,:,g,s,m)),2))), [0.25 1.5]);
-            if m == numel(N.modes)+1
+            if m == 1
                 title("Reconstructed sFNC (all modes)"); hold on;
             else
                 title(strjoin(["Reconstructed sFNC (largest", num2str(nnz(i(m,:))), "modes)"])); hold on;
             end
 
             % Visualize MSE per sample
-            subplot(2, numel(N.modes)+2, (m+1)+(numel(N.modes)+2));
+            subplot(2, numel(N.modes)+1, m+(numel(N.modes)+1));
             stem(squeeze(msqe(:,g,s,m))); axis tight; hold on
             xlabel('samples'); ylabel('MSE');
-            if m == numel(N.modes)+1
+            if m == 1
                 title("Reconstructed sFNC (all modes)"); hold on;
             else
                 title(strjoin(["MSE per sample (largest", num2str(nnz(i(m,:))), "modes)"]));
@@ -356,14 +345,38 @@ for g = 1:N.conditions
         end
         sgtitle(F(N.fig-1), strjoin([labels.methods(s), "DMD of", labels.diagnosis(g)]));
 
-            % % Display difference between partial and full reconstructions
-            % subplot(2,3,3);
-            % display_FNC(real(icatb_vec2mat(mean(Xhat.full,2) - mean(Xhat.partial,2))), [0.25 1.5]); hold on;
-            % title('Full - Partial Reconstruction');
+        % Open figure (large)
+        F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1055 1055];
+        N.fig = N.fig + 1;
 
+        % Visualize group sFNC
+        subplot(2,numel(N.modes)+1,1);
+        display_FNC(icatb_vec2mat(mean(squeeze(mFNC(:,:,g)),2)), [0.25 1.5]); hold on;
+        title(strjoin(["sFNC for", labels.diagnosis(g)])); hold on;
+
+        % display difference between reconstructions and true sFNC
+        for m = 1:numel(N.modes)+1
+            % Display difference between reconstructions and actual sFNC
+            subplot(2, numel(N.modes)+1, m+numel(N.modes)+1);
+            display_FNC(real(icatb_vec2mat(mean(squeeze(mFNC(:,:,g)) - Xhat(:,:,g,s,m),2))), [0.25 1.5]);
+            if m == 1
+                title("sFNC - Reconstruction (all modes)"); hold on;
+            else
+                title(strjoin(["sFNC - Reconstruction (largest", num2str(nnz(i(m,:))), "modes)"])); hold on;
+            end
+    
+            % Display difference between partial and full reconstructions
+            if m > 1
+                subplot(2, numel(N.modes)+1, m);
+                display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,s,1) - Xhat(:,:,g,s,m),2))), [0.25 1.5]);
+                title("Difference Between Reconstructions", strjoin(["(all modes - largest", num2str(nnz(i(m,:))), "modes)"]));
+                hold on;
+            end
+        end
+        sgtitle(F(N.fig-1), strjoin([labels.methods(s), "DMD of", labels.diagnosis(g)]));
     end
 end
-clear g s m e mFNC Xhat
+clear g s m e i mFNC Xhat
 
 
 %% Compute spectra for each group
