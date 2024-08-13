@@ -388,15 +388,15 @@ P = nan(N.TR-1, N.conditions);
 % Compute group spectra and mode power
 for g = 1:N.conditions
     % Compute and plot spectra
-    [f(:,g), P(:,g), F(N.fig+g-1)] = DMD_spectrum(Phi(:,:,g), mu(:,1), 'plotit',1);  % power
-    F(N.fig+g-1).OuterPosition = [1 1 1055 1055]; hold on;   % increase figure size
+    [f(:,g), P(:,g), F(N.fig+2*(g-1))] = DMD_spectrum(Phi(:,:,g,1), mu(:,g), 'plotit',1);  % power
+    F(N.fig+2*(g-1)).OuterPosition = [1 1 1055 1055]; hold on;   % increase figure size
     title(strjoin(["Power Spectrum for", labels.diagnosis(g)]));
     xlim([min(f(:,g)) max(f(:,g))]); ylim([0 max(P(:,g))]);
 
     % Plot cumulative power of the modes
     [f_sort, i] = sort(f(:,g),1);
     P_sort = P(i,g);
-    F(g+N.conditions) = figure; F(g+N.conditions).OuterPosition = [1 1 1055 1055];
+    F(N.fig+(2*g-1)) = figure; F(N.fig+(2*g-1)).OuterPosition = [1 1 1055 1055];
     plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
     plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
     xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
@@ -404,10 +404,19 @@ for g = 1:N.conditions
     title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]));
     legend("Cumulative Power", "90% of Power", 'Location','southeast');
 end
+N.fig = N.fig + (2*g-1);
 clear g X Y d D i P_sort f_sort lambda_sort
 
 
 %% Visualize three most powerful modes for each group
+
+% for g = 1:N.conditions
+%     for s = 1:numel(labels.methods)
+%         for m = 1:numel(N.modes)+1
+%             [Phi(:,:,g,s), mu(:,g), lambda(:,g), diagS(:,g), x0(:,g)]
+%         end
+%     end
+% end
 
 
 %% Plot eigenvalues on unit circle
