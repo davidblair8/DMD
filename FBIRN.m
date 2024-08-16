@@ -523,7 +523,7 @@ for g = 1:N.conditions
             title("Mode (Real Part)"); hold on;
             subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(l.i) max(l.i)]);
             title("Mode (Imaginary Part)"); hold on;
-            sgtitle(strjoin(["f =" , num2str(f_sort(j))]));
+            sgtitle(strjoin([labels.diagnosis(g), ", ", labels.methods(s) "DMD, f = " , num2str(f_sort(j))], ''));
         end
 
         % visualize dominant harmonic modes
@@ -533,7 +533,7 @@ for g = 1:N.conditions
             subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]); title("Mode (Real Part)"); hold on;
             subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(l.i) max(l.i)]);
             title("Mode (Imaginary Part)"); hold on;
-            sgtitle(strjoin([labels.diagnosis(g), ",", labels.methods(s) "DMD, f =" , num2str(f_sort(j))]));
+            sgtitle(strjoin([labels.diagnosis(g), ", ", labels.methods(s) " DMD, f = " , num2str(f_sort(j))], ''));
         end
     end
 
@@ -542,7 +542,7 @@ for g = 1:N.conditions
     plot(f_sort, l.r, 'r'); hold on
     plot(f_sort, l.i, 'b');
     plot(f_sort, l.t, 'k');
-    title('Absolute Amplitudes by Frequency');
+    title(strjoin(['Absolute Amplitudes by Frequency,', labels.diagnosis(g)]));
     xlabel('Frequency (Hz)'); ylabel('Amplitude');
     legend('Real', 'Imaginary', 'Total');
 end
