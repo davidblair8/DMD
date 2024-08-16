@@ -435,7 +435,7 @@ for g = 1:N.conditions
     xlabel("Real"); ylabel("Imaginary");
     xlim([-1.1 1.1]); ylim([-1.1 1.1]);
     legend(s, {'\lambda > 1', '\lambda < 1', '\lambda = 1'});
-    title("Eigenvalues");
+    title(strjoin(labels.diagnosis(g), "Eigenvalues"));
 end
 clear i r g c theta
 
