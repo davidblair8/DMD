@@ -410,29 +410,34 @@ clear g s m e i mFNC Xhat
 
 %% Plot eigenvalues on unit circle
 
-% Separate eigenvalues into real, imaginary parts
-i = imag(lambda(:,1));
-r = real(lambda(:,1));
-c(:,1) = abs(lambda(:,1)) > 1;
-c(:,2) = abs(lambda(:,1)) < 1;
-c(:,3) = abs(lambda(:,1)) == 1;
-
-% Plot eigenvalues on unit circle
-F(N.fig) = figure; N.fig = N.fig+1;
-F(N.fig-1).OuterPosition = [1 1 1055 1055];
-pbaspect([1 1 1]); hold on
-s(1) = scatter(r(c(:,1)), i(c(:,1)), 'MarkerFaceColor','r');
-s(2) = scatter(r(c(:,2)), i(c(:,2)), 'MarkerFaceColor','b');
-s(3) = scatter(r(c(:,3)), i(c(:,3)), 'MarkerFaceColor','g');
-% scatter(r, i, 'MarkerEdgeColor','k');
-
-% Plot unit circle in real, imaginary space
-theta = 0:0.1:2*pi+0.1;
-x = cos(theta); y = sin(theta);
-plot(x, y, '-k');
-xlabel("Real"); ylabel("Imaginary");
-xlim([-1.1 1.1]); ylim([-1.1 1.1]);
-legend(s, {'\lambda > 1', '\lambda < 1', '\lambda = 1'});
+% test both groups
+for g = 1:N.conditions
+    % Separate eigenvalues into real, imaginary parts
+    i = imag(lambda(:,g));
+    r = real(lambda(:,g));
+    c(:,1) = abs(lambda(:,g)) > 1;
+    c(:,2) = abs(lambda(:,g)) < 1;
+    c(:,3) = abs(lambda(:,g)) == 1;
+    
+    % Plot eigenvalues on unit circle
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1055 1055];
+    pbaspect([1 1 1]); hold on
+    s(1) = scatter(r(c(:,1)), i(c(:,1)), 'MarkerFaceColor','r');
+    s(2) = scatter(r(c(:,2)), i(c(:,2)), 'MarkerFaceColor','b');
+    s(3) = scatter(r(c(:,3)), i(c(:,3)), 'MarkerFaceColor','g');
+    % scatter(r, i, 'MarkerEdgeColor','k');
+    
+    % Plot unit circle in real, imaginary space
+    theta = 0:0.1:2*pi+0.1;
+    x = cos(theta); y = sin(theta);
+    plot(x, y, '-k');
+    xlabel("Real"); ylabel("Imaginary");
+    xlim([-1.1 1.1]); ylim([-1.1 1.1]);
+    legend(s, {'\lambda > 1', '\lambda < 1', '\lambda = 1'});
+    title("Eigenvalues");
+end
+clear i r g c theta
 
 
 %% Plot FN time courses from single module (per mode)
