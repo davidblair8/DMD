@@ -259,16 +259,16 @@ else
         [Xhat(:,:,g,1), ~] = DMD_recon(Phi(:,:,g,1), lambda(:,g), x0(:,g), N.TR-1);   % reconstruct from standard DMD
         subplot(2,3,g+2*(g-1));
         display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,1),2))), [0.25 1.5]);
-        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC (standard)"])); hold on;
+        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(standard)"); hold on;
 
         [Xhat(:,:,g,2), ~] = DMD_recon(Phi(:,:,g,2), lambda(:,g), x0(:,g), N.TR-1);   % reconstruct from exact DMD
         subplot(2,3,2*g+(g-1));
         display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,2),2))), [0.25 1.5]);
-        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC (exact)"])); hold on;
+        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(exact)"); hold on;
 
         subplot(2,3,3*g);
         display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,1)-Xhat(:,:,g,2),2))), [0.25 1.5]);
-        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC (standard - exact)"])); hold on;
+        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(standard-exact)"); hold on;
     end
 end
 clear i g s d
@@ -297,9 +297,9 @@ for g = 1:N.conditions
     xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
     xlim([min(f_sort) max(f_sort)]);
     title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]));
-    legend("Cumulative Power", "90% of Power", 'Location','southeast');
+    legend("Cumulative Power", "90%2 of Power", 'Location','southeast');
 end
-N.fig = N.fig + (2*g-1);
+N.fig = N.fig + 2*g + 1;
 clear g X Y d D i P_sort f_sort lambda_sort
 
 
@@ -340,7 +340,7 @@ for g = 1:N.conditions
     
             % Compute MSE per sample (TR)
             e = mFNC(:,:,g) - Xhat(:,:,g,s,m);
-            msqe(:,g,s,m) = abs(sum(e.^2))/(N.ROI*(N.ROI-1)/2);
+            msqe(:,g,s,m) = sum(e.^2)/(N.ROI*(N.ROI-1)/2);
 
             % Visualize estimated sFNC
             subplot(2, numel(N.modes)+1, m);
