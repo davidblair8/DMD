@@ -128,7 +128,12 @@ clear d i r
 
 % rename FNC data
 FNC = cellfun(@transpose, DFNC_FBIRN, 'UniformOutput',false);
-clear DFNC_FBIRN
+
+% demean FNC data
+mFNC = cellfun(@mean, cellfun(@mean, DFNC_FBIRN, 'UniformOutput',false), 'UniformOutput',false);
+mFNC = cellfun(@transpose, mFNC, 'UniformOutput',false);
+FNC = cellfun(@minus, FNC, mFNC, 'UniformOutput',false);
+clear DFNC_FBIRN mFNC
 
 % Set counters
 N.fig = 1;                                  % figures
@@ -187,7 +192,7 @@ N.modes = 3;
 %% Define filename based on parameters
 
 % define core file name
-fileName = "groups_test";
+fileName = "groups_demeaned";
 
 % Get file list
 fList = dir(fullfile(pth{5}, strcat(strjoin([fileName, "iteration"], '_'), '*.mat')));
@@ -242,36 +247,72 @@ for g = 1:N.conditions
     end
 end
 
+% compute true group-level static FNCs
+sFNC = nan(N.ROI*(N.ROI-1)/2, N.conditions);
+for g = 1:N.conditions
+    m = cell2mat(FNC(analysis_data{:,"Diagnosis"} == labels.diagnosis(g))');
+    sFNC(:,g) = mean(m,2, "omitmissing");
+end
+
 % Check if exact and standard SVD produce same outputs
 i = cellfun(@isempty, dstnc);
 if nnz(i) == length(dstnc)
     Phi = squeeze(Phi(:,:,:,2));    % keep exact DMD
     dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions);
+    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, N.conditions);
+
+    % Visualize true vs. reconstructed sFNCs
+    for g = 1:N.conditions
+        F(N.fig) = figure; N.fig = N.fig + 1;
+        F(N.fig-1).OuterPosition = [1 1 1920 1055];
+
+        % Plot true group sFNC
+        subplot(2,2,1);
+        title(strjoin(["True sFNC of", labels.diagnosis(g)]));
+        display_FNC(icatb_vec2mat(sFNC(:,g))); hold on
+
+        % Display group dFNC reconstruction
+        [Xhat(:,:,g), ~] = DMD_recon(Phi(:,:,g), lambda(:,g), x0(:,g), N.TR-1);
+        subplot(2,2,2); title(strjoin(["Reconstructed sFNC of", labels.diagnosis(g)]));
+        display_FNC(icatb_vec2mat(mean(Xhat(:,:,g),2))); hold on
+
+        % Plot difference between true, reconstructed sFNC
+        d = sFNC(:,g) - mean(Xhat(:,:,g),2);
+        subplot(2,2,4); title("True sFNC - Reconstructed sFNC", labels.diagnosis(g));
+        display_FNC(icatb_vec2mat(d)); hold on
+    end
 else
     warning("DMD methods do not concur!");
-    d = dstnc;
-    dstnc = nan(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions);
-    F(N.fig) = figure; N.fig = N.fig + 1;       % visualize exact vs. standard DMD
+
+    % visualize results
+    F(N.fig) = figure; N.fig = N.fig + 1;
     F(N.fig-1).OuterPosition = [1 1 1920 1055];
+    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions);
     Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions, 2);
     for g = 1:N.conditions
+
+        % Plot true group sFNC
+        subplot(2, size(Phi,4)+2, (g-1)*(size(Phi,4)+2)+1);
+        title(strjoin(["True sFNC of", labels.diagnosis(g)])); hold on
+        display_FNC(icatb_vec2mat(sFNC(:,g)), [0.25 1.5]);
+
         dstnc(:,:,g) = abs(Phi(:,:,g,1) - Phi(:,:,g,2));
-        [Xhat(:,:,g,1), ~] = DMD_recon(Phi(:,:,g,1), lambda(:,g), x0(:,g), N.TR-1);   % reconstruct from standard DMD
-        subplot(2,3,g+2*(g-1));
-        display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,1),2))), [0.25 1.5]);
-        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(standard)"); hold on;
 
-        [Xhat(:,:,g,2), ~] = DMD_recon(Phi(:,:,g,2), lambda(:,g), x0(:,g), N.TR-1);   % reconstruct from exact DMD
-        subplot(2,3,2*g+(g-1));
-        display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,2),2))), [0.25 1.5]);
-        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(exact)"); hold on;
+        % reconstruct from DMD
+        for s = 1:size(Phi,4)
+            [Xhat(:,:,g,s), ~] = DMD_recon(Phi(:,:,g,s), lambda(:,g), x0(:,g), N.TR-1);
+            subplot(2, size(Phi,4)+2, (g-1)*(size(Phi,4)+2)+1+s);
+            display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,s),2))), [0.25 1.5]); hold on;
+            title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), strjoin(["(", lower(labels.methods(g)), ")"], ''));
+        end
 
-        subplot(2,3,3*g);
+        % plot difference betwen standard, exact DMD
+        subplot(2, size(Phi,4)+2, g*(size(Phi,4)+2));
         display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,1)-Xhat(:,:,g,2),2))), [0.25 1.5]);
         title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(standard-exact)"); hold on;
     end
 end
-clear i g s d
+clear i g s d m
 
 
 %% Compute spectra for each group
@@ -299,7 +340,7 @@ for g = 1:N.conditions
     title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]));
     legend("Cumulative Power", "90%2 of Power", 'Location','southeast');
 end
-N.fig = N.fig + 2*g + 1;
+N.fig = N.fig + 2*g;
 clear g X Y d D i P_sort f_sort lambda_sort
 
 
@@ -542,7 +583,7 @@ for g = 1:N.conditions
     plot(f_sort, l.r, 'r'); hold on
     plot(f_sort, l.i, 'b');
     plot(f_sort, l.t, 'k');
-    title(strjoin(['Absolute Amplitudes by Frequency,', labels.diagnosis(g)]));
+    title('Absolute Amplitudes by Frequency,', labels.diagnosis(g));
     xlabel('Frequency (Hz)'); ylabel('Amplitude');
     legend('Real', 'Imaginary', 'Total');
 end
