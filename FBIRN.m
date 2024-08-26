@@ -192,7 +192,7 @@ N.modes = 3;
 %% Define filename based on parameters
 
 % define core file name
-fileName = "groups_demeaned";
+fileName = "subjects_demeaned";
 
 % Get file list
 fList = dir(fullfile(pth{5}, strcat(strjoin([fileName, "iteration"], '_'), '*.mat')));
@@ -213,382 +213,101 @@ clear fList nIter a k n
 %% Isolate group-level components & activity from dFNC
 
 % Preallocate arrays
-Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions, numel(labels.methods));
-mu = nan(N.TR-1, N.conditions);
-lambda = nan(N.TR-1, N.conditions);
-diagS = nan(N.ROI*(N.ROI-1)/2, N.conditions);
-x0 = nan(N.ROI*(N.ROI-1)/2, N.conditions);
-dstnc = cell(N.conditions,1);
+Phi = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}), numel(labels.methods));
+mu = nan(N.TR-1, sum(N.subjects{:,:}));
+lambda = nan(N.TR-1, sum(N.subjects{:,:}));
+diagS = nan(N.TR-1, sum(N.subjects{:,:}));
+x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
+dstnc = cell(sum(N.subjects{:,:}),1);
+sFNC = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
+f = nan(N.TR-1, sum(N.subjects{:,:}));
+P = nan(N.TR-1, sum(N.subjects{:,:}));
+msqe = nan(N.TR, N.conditions, size(Phi,4), numel(N.modes)+1);
 
-% Run group-level DMD
-for g = 1:N.conditions
-    % Generate group-level X, Y matrices
-    X = FNC(analysis_data{:,'Diagnosis'} == labels.diagnosis(g))';
-    Y = FNC(analysis_data{:,'Diagnosis'} == labels.diagnosis(g))';
-    for s = 1:numel(X)
-        X{s} = X{s}(:, 1:N.TR-1);
-        Y{s} = Y{s}(:, 2:N.TR);
-    end
-    X = cell2mat(X);
-    Y = cell2mat(Y);
+% Run subject-level DMD
+for s = 1:sum(N.subjects{:,:})
+    X = FNC{s}(:, 1:N.TR-1);
+    Y = FNC{s}(:, 2:N.TR);
 
     % Run DMD
-    for s = 1:numel(labels.methods)
-        [Phi(:,:,g,s), mu(:,g), lambda(:,g), diagS(:,g), x0(:,g)] = DMD(X, Y, 'dt',2, 'exact',logical(strcmpi(labels.methods(s),"Exact")), 'r',N.TR-1);  % standard
+    for m = 1:numel(labels.methods)
+        [Phi(:,:,s,m), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(X, Y, 'dt',2, 'exact',logical(strcmpi(labels.methods(m),"Exact")), 'r',N.TR-1);  % standard
     end
 
     % Compare exact vs. standard DMD
-    D = Phi(:,:,g,1) - Phi(:,:,g,2);
+    D = Phi(:,:,s,1) - Phi(:,:,s,2);
     d = nnz(abs(D) >= eps);
     if d
-        dstnc{g} = abs(Phi(:,:,g,1) - Phi(:,:,g,2));
+        dstnc{s} = abs(Phi(:,:,s,1) - Phi(:,:,s,2));
     else
-        dstnc{g} = [];
+        dstnc{s} = [];
     end
-end
 
-% compute true group-level static FNCs
-sFNC = nan(N.ROI*(N.ROI-1)/2, N.conditions);
-for g = 1:N.conditions
-    m = cell2mat(FNC(analysis_data{:,"Diagnosis"} == labels.diagnosis(g))');
-    sFNC(:,g) = mean(m,2, "omitmissing");
+    % compute true subject-level static FNCs
+    sFNC(:,s) = mean(FNC{s}, 2, "omitmissing");
+
+    % Compute group spectra and mode power
+    [f(:,s), P(:,s)] = DMD_spectrum(Phi(:,:,s, strcmpi(labels.methods, "exact")), mu(:,s), 'plotit',0);     % power
 end
 
 % Check if exact and standard SVD produce same outputs
 i = cellfun(@isempty, dstnc);
 if nnz(i) == length(dstnc)
-    Phi = squeeze(Phi(:,:,:,2));    % keep exact DMD
-    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions);
-    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, N.conditions);
 
-    % Visualize true vs. reconstructed sFNCs
-    for g = 1:N.conditions
-        F(N.fig) = figure; N.fig = N.fig + 1;
-        F(N.fig-1).OuterPosition = [1 1 1920 1055];
-
-        % Plot true group sFNC
-        subplot(2,2,1);
-        display_FNC(icatb_vec2mat(sFNC(:,g))); hold on
-        title(strjoin(["True sFNC of", labels.diagnosis(g)]));
-
-        % Display group dFNC reconstruction
-        [Xhat(:,:,g), ~] = DMD_recon(Phi(:,:,g), lambda(:,g), x0(:,g), N.TR-1);
-        subplot(2,2,2); title(strjoin(["Reconstructed sFNC of", labels.diagnosis(g)]));
-        display_FNC(icatb_vec2mat(mean(Xhat(:,:,g),2))); hold on
-
-        % Plot difference between true, reconstructed sFNC
-        d = sFNC(:,g) - mean(Xhat(:,:,g),2);
-        subplot(2,2,4); title("True sFNC - Reconstructed sFNC", labels.diagnosis(g));
-        display_FNC(icatb_vec2mat(d)); hold on
+    % Compute reconstructed time courses
+    Phi = squeeze(Phi(:,:,:,strcmpi(labels.methods, "exact")));    % keep exact DMD
+    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}));
+    for s = 1:sum(N.subjects{:,:})
+        [Xhat(:,:,s), ~] = DMD_recon(Phi(:,:,s), lambda(:,s), x0(:,s), N.TR-1);
     end
 else
     warning("DMD methods do not concur!");
 
-    % visualize results
-    F(N.fig) = figure; N.fig = N.fig + 1;
-    F(N.fig-1).OuterPosition = [1 1 1920 1055];
-    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions);
-    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR-1, N.conditions, 2);
-    for g = 1:N.conditions
-
-        % Plot true group sFNC
-        subplot(2, size(Phi,4)+2, (g-1)*(size(Phi,4)+2)+1);
-        display_FNC(icatb_vec2mat(sFNC(:,g)), [0.25 1.5]); hold on
-        title(strjoin(["True sFNC of", labels.diagnosis(g)]));
-
-        dstnc(:,:,g) = abs(Phi(:,:,g,1) - Phi(:,:,g,2));
-
+    % Compute reconstructed time courses
+    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}), numel(labels.methods));
+    for s = 1:sum(N.subjects{:,:})
         % reconstruct from DMD
-        for s = 1:size(Phi,4)
-            [Xhat(:,:,g,s), ~] = DMD_recon(Phi(:,:,g,s), lambda(:,g), x0(:,g), N.TR-1);
-            subplot(2, size(Phi,4)+2, (g-1)*(size(Phi,4)+2)+1+s);
-            display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,s),2))), [0.25 1.5]); hold on;
-            title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), strjoin(["(", lower(labels.methods(s)), ")"], ''));
+        for m = 1:numel(labels.methods)
+            [Xhat(:,:,s,m), ~] = DMD_recon(Phi(:,:,s,m), lambda(:,s), x0(:,s), N.TR-1);
         end
-
-        % plot difference betwen standard, exact DMD
-        subplot(2, size(Phi,4)+2, g*(size(Phi,4)+2));
-        display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,1)-Xhat(:,:,g,2),2))), [0.25 1.5]);
-        title(strjoin(["Reconstructed", labels.diagnosis(g), "sFNC"]), "(standard-exact)"); hold on;
+        dstnc(:,:,s) = abs(Phi(:,:,s,strcmpi(labels.methods, "standard")) - Phi(:,:,s,strcmpi(labels.methods, "exact")));
     end
 end
-clear i g s d m
 
+% Reconstruct with different numbers of modes
+Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}), numel(labels.methods), numel(N.modes)+1);
+for s = 1:sum(N.subjects{:,:})
+    % get N.modes most powerful modes per subject
+    i = true(numel(N.modes)+1, N.TR-1);
+    [~, ind] = sort(P(:,s));
+    for m = 1:numel(N.modes)
+        i(m+1, ind(1:N.modes(m),:)) = false;
+        i(m+1,:) = ~i(m+1,:);
+    end
+    clear ind m
 
-%% Compute spectra for each group
-
-% preallocate arrays
-f = nan(N.TR-1, N.conditions);
-P = nan(N.TR-1, N.conditions);
-
-% Compute group spectra and mode power
-for g = 1:N.conditions
-    % Compute and plot spectra
-    [f(:,g), P(:,g), F(N.fig+2*(g-1))] = DMD_spectrum(Phi(:,:,g,1), mu(:,g), 'plotit',1);  % power
-    F(N.fig+2*(g-1)).OuterPosition = [1 1 1055 1055]; hold on;   % increase figure size
-    title(strjoin(["Power Spectrum for", labels.diagnosis(g)]));
-    xlim([min(f(:,g)) max(f(:,g))]); ylim([0 max(P(:,g))]);
-
-    % Plot cumulative power of the modes
-    [f_sort, i] = sort(f(:,g),1);
-    P_sort = P(i,g);
-    F(N.fig+(2*g-1)) = figure; F(N.fig+(2*g-1)).OuterPosition = [1 1 1055 1055];
-    plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
-    plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
-    xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
-    xlim([min(f_sort) max(f_sort)]);
-    title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]));
-    legend("Cumulative Power", "90%2 of Power", 'Location','southeast');
-end
-N.fig = N.fig + 2*g;
-clear g X Y d D i P_sort f_sort lambda_sort
-
-
-%% Check reconstruction error
-
-% get N.modes most powerful modes
-i = true(numel(N.modes)+1, N.TR-1);
-[~, ind] = sort(P);
-for m = 1:numel(N.modes)
-    i(m+1, ind(1:N.modes(m),:)) = false;
-    i(m+1,:) = ~i(m+1,:);
-end
-clear ind m
-
-% preallocate for MSQE calculation
-mFNC = nan(N.ROI*(N.ROI-1)/2, N.TR, N.conditions);
-msqe = nan(N.TR, N.conditions, size(Phi,4), numel(N.modes)+1);
-Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, N.conditions, 2, numel(N.modes)+1);
-
-% Compute and visualize MSQE, reconstructions
-for g = 1:N.conditions
-
-    % Compile dFNC for each group
-    m = cell2mat(FNC(analysis_data{:,"Diagnosis"} == labels.diagnosis(g))');
-    m = reshape(m, N.ROI*(N.ROI-1)/2, N.TR, N.subjects{:,labels.diagnosis(g)});
-    mFNC(:,:,g) = mean(m,3);
-
-    for s = 1:numel(labels.methods)     % test both standard and exact DMD
-
-        % Open figure (large)
-        F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1055 1055];
-        N.fig = N.fig + 1;
-        
-        % test reconstruction with several numbers of modes
-        for m = 1:numel(N.modes)+1
-            % compute reconstruction for each method & number of modes
-            [Xhat(:,:,g,s,m), ~] = DMD_recon(Phi(:,:,g,s), lambda(:,g), x0(:,g), N.TR, 'keep_modes',i(m,:));
-    
-            % Compute MSE per sample (TR)
-            msqe(:,g,s,m) = rmse(Xhat(:,:,g,s,m), mFNC(:,:,g));
-
-            % Visualize estimated sFNC
-            subplot(2, numel(N.modes)+1, m);
-            display_FNC(real(icatb_vec2mat(mean(squeeze(Xhat(:,:,g,s,m)),2))), [0.25 1.5]);
-            if m == 1
-                title("Reconstructed sFNC (all modes)"); hold on;
-            else
-                title(strjoin(["Reconstructed sFNC (largest", num2str(nnz(i(m,:))), "modes)"])); hold on;
-            end
-
-            % Visualize MSE per sample
-            subplot(2, numel(N.modes)+1, m+(numel(N.modes)+1));
-            stem(squeeze(msqe(:,g,s,m))); axis tight; hold on
-            xlabel('samples'); ylabel('MSE');
-            if m == 1
-                title("Reconstructed sFNC (all modes)"); hold on;
-            else
-                title(strjoin(["MSE per sample (largest", num2str(nnz(i(m,:))), "modes)"]));
-            end
+    % Compute reconstructions and RMSQE
+    for m = 1:numel(labels.methods)     % test both standard and exact DMD
+        for n = 1:numel(N.modes)+1      % test reconstruction with several numbers of modes
+            [Xhat(:,:,s,m,n), ~] = DMD_recon(Phi(:,:,s,m), lambda(:,m), x0(:,m), N.TR, 'keep_modes',i(n,:));    % compute reconstruction for each method & number of modes
+            msqe(:,s,m,n) = rmse(Xhat(:,:,s,m,n), FNC{s});                                                   % Compute MSE per sample (TR)
         end
-        sgtitle(F(N.fig-1), strjoin([labels.methods(s), "DMD of", labels.diagnosis(g)]));
-
-        % Open figure (large)
-        F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1055 1055];
-        N.fig = N.fig + 1;
-
-        % Visualize group sFNC
-        subplot(2,numel(N.modes)+1,1);
-        display_FNC(icatb_vec2mat(sFNC(:,g)), [0.25 1.5]); hold on;
-        title(strjoin(["sFNC for", labels.diagnosis(g)])); hold on;
-
-        % display difference between reconstructions and true sFNC
-        for m = 1:numel(N.modes)+1
-            % Display difference between reconstructions and actual sFNC
-            subplot(2, numel(N.modes)+1, m+numel(N.modes)+1);
-            display_FNC(real(icatb_vec2mat(mean(squeeze(mFNC(:,:,g)) - Xhat(:,:,g,s,m),2))), [0.25 1.5]);
-            if m == 1
-                title("sFNC - Reconstruction (all modes)"); hold on;
-            else
-                title(strjoin(["sFNC - Reconstruction (largest", num2str(nnz(i(m,:))), "modes)"])); hold on;
-            end
-    
-            % Display difference between partial and full reconstructions
-            if m > 1
-                subplot(2, numel(N.modes)+1, m);
-                display_FNC(real(icatb_vec2mat(mean(Xhat(:,:,g,s,1) - Xhat(:,:,g,s,m),2))), [0.25 1.5]);
-                title("Difference Between Reconstructions", strjoin(["(all modes - largest", num2str(nnz(i(m,:))), "modes)"]));
-                hold on;
-            end
-        end
-        sgtitle(F(N.fig-1), strjoin([labels.methods(s), "DMD of", labels.diagnosis(g)]));
     end
 end
-clear g s m e i mFNC Xhat t
-
-
-%% Visualize three most powerful modes for each group
-
-% for g = 1:N.conditions
-%     for s = 1:numel(labels.methods)
-%         for m = 1:numel(N.modes)+1
-%             [Phi(:,:,g,s), mu(:,g), lambda(:,g), diagS(:,g), x0(:,g)]
-%         end
-%     end
-% end
-
-
-%% Plot eigenvalues on unit circle
-
-% test both groups
-for g = 1:N.conditions
-    % Separate eigenvalues into real, imaginary parts
-    i = imag(lambda(:,g));
-    r = real(lambda(:,g));
-    c(:,1) = abs(lambda(:,g)) > 1;
-    c(:,2) = abs(lambda(:,g)) < 1;
-    c(:,3) = abs(lambda(:,g)) == 1;
-    
-    % Plot eigenvalues on unit circle
-    F(N.fig) = figure; N.fig = N.fig+1;
-    F(N.fig-1).OuterPosition = [1 1 1055 1055];
-    pbaspect([1 1 1]); hold on
-    s(1) = scatter(r(c(:,1)), i(c(:,1)), 'MarkerFaceColor','r');
-    s(2) = scatter(r(c(:,2)), i(c(:,2)), 'MarkerFaceColor','b');
-    s(3) = scatter(r(c(:,3)), i(c(:,3)), 'MarkerFaceColor','g');
-    % scatter(r, i, 'MarkerEdgeColor','k');
-    
-    % Plot unit circle in real, imaginary space
-    theta = 0:0.1:2*pi+0.1;
-    x = cos(theta); y = sin(theta);
-    plot(x, y, '-k');
-    xlabel("Real"); ylabel("Imaginary");
-    xlim([-1.1 1.1]); ylim([-1.1 1.1]);
-    legend(s, {'\lambda > 1', '\lambda < 1', '\lambda = 1'});
-    title(strjoin(labels.diagnosis(g), "Eigenvalues"));
-end
-clear i r g c theta
-
-
-%% Plot FN time courses from single module (per mode)
-
-% set mask
-r = [6 6 6 7 7 7];
-c = [2 3 4 2 3 4];
-ind.rc = horzcat(r', c');
-
-% convert masks to linear indices
-m = zeros(N.ROI, N.ROI);
-m(r,c) = 1;
-ind.lin = find(m);
-
-for g = 1:N.conditions                  % test both groups
-    [~, i] = sort(f(:,g));              % sort frequencies
-    for s = 1:numel(labels.methods)     % test both standard and exact DMD
-
-        % Open figure
-        F(N.fig) = figure; N.fig = N.fig+1;
-        F(N.fig-1).OuterPosition = [1 1 1920 1055];
-        
-        % Plot mask
-        subplot(2,4,1);
-        imagesc(m); colormap bone; colorbar; pbaspect([1 1 1]);
-        title("Timecourse Mask");
-        xlabel("Neuromark Functional Networks");
-        ylabel("Neuromark Functional Networks");
-        
-        % Plot original FN courses over time
-        subplot(2,4,5);
-        l = cell2mat(FNC(analysis_data{:,"Diagnosis"} == labels.diagnosis(g))');
-        plot(1:N.TR*N.subjects{:,labels.diagnosis(g)}, l(ind.lin(:,1),:)); hold on;
-        title("Original FNC Values");
-        xlabel("Time Points"); ylabel("Real Amplitude");
-        xlim([1 N.TR*N.subjects{:,labels.diagnosis(g)}]);
-        legend(num2str(ind.rc));
-        
-        % Plot FN courses over time as a function of number of modes
-        ii = [2 3 4 6 7 8];
-        for k = 1:length(c)
-            [Xhat, ~] = DMD_recon(Phi(:,i(k+1),g,s), lambda(i(k+1),g), x0(:,g), N.TR*N.subjects{:,labels.diagnosis(g)});    % five most powerful modes
-            subplot(2,4,ii(k));
-            plot(1:N.TR*N.subjects{:,labels.diagnosis(g)}, Xhat(ind.lin,:)); hold on;
-            title("Reconstructed FNC Values", strjoin(["f =", num2str(f(i(k+1))), "Hz"]));
-            xlabel("Time Points"); ylabel("Real Amplitude");
-            xlim([1 N.TR*10]);
-            legend(num2str(ind.rc));
-        end
-
-        % title for grid
-        sgtitle(strjoin([labels.diagnosis(g), ", ", labels.methods(s), " DMD"], ''));
-    end
-end
-clear i ii ind r c k m n e Xhat l
-
-
-%% Visualize modes
-
-% test both groups
-for g = 1:N.conditions
-
-    % sort frequencies, power
-    [f_sort, i] = sort(f(:,g));
-    P_sort = P(i,g);
-
-    % test both standard and exact DMD
-    for s = 1:numel(labels.methods)
-
-        % remove duplicate (negative) modes
-        Phi_sort = Phi(:,i,g,s);
-        
-        % get amplitudes as function of frequency
-        l.r = max(abs(real(Phi_sort)));
-        l.i = max(abs(imag(Phi_sort)));
-        l.t = max(abs(Phi_sort));
-
-        % visualize dominant harmonic modes
-        for j = 1:nnz(cumsum(P_sort)./max(cumsum(P_sort)) < 0.1)
-            Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j)));
-            F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1920 1055]; N.fig = N.fig + 1;
-            subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]);
-            title("Mode (Real Part)"); hold on;
-            subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(l.i) max(l.i)]);
-            title("Mode (Imaginary Part)"); hold on;
-            sgtitle(strjoin([labels.diagnosis(g), ", ", labels.methods(s) " DMD, f = " , num2str(f_sort(j))], ""));
-        end
-    end
-
-    % visualize amplitudes as function of frequency
-    F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1100 1055]; N.fig = N.fig+1;
-    plot(f_sort, l.r, 'r'); hold on
-    plot(f_sort, l.i, 'b');
-    plot(f_sort, l.t, 'k');
-    title('Absolute Amplitudes by Frequency,', labels.diagnosis(g));
-    xlabel('Frequency (Hz)'); ylabel('Amplitude');
-    legend('Real', 'Imaginary', 'Total');
-    xlim([0 max(f,[],"all")]);
-end
-clear i j Phi_mat phase_mat Phi_sort phi_sort f_sort P_sort l s g
+clear i g s d m n
 
 
 %% Save results & figure(s)
 
-% Save figures
-savefig(F, fullfile(pth{5}, fileName), 'compact');
-for c = 1:N.fig-1
-    saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
-    saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
-end
-clear c F a ax axes ts
+% % Save figures
+% savefig(F, fullfile(pth{5}, fileName), 'compact');
+% for c = 1:N.fig-1
+%     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
+%     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
+% end
+% clear c F a ax axes ts
 
 % Save files
 N.fig = N.fig - 1;
