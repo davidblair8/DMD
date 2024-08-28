@@ -218,10 +218,11 @@ mu = nan(N.TR-1, sum(N.subjects{:,:}));
 lambda = nan(N.TR-1, sum(N.subjects{:,:}));
 diagS = nan(N.TR-1, sum(N.subjects{:,:}));
 x0 = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
-dstnc = cell(sum(N.subjects{:,:}),1);
+dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
 sFNC = nan(N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
 f = nan(N.TR-1, sum(N.subjects{:,:}));
 P = nan(N.TR-1, sum(N.subjects{:,:}));
+Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}), numel(labels.methods));
 msqe = nan(N.TR, N.conditions, size(Phi,4), numel(N.modes)+1);
 
 % Run subject-level DMD
@@ -229,18 +230,18 @@ for s = 1:sum(N.subjects{:,:})
     X = FNC{s}(:, 1:N.TR-1);
     Y = FNC{s}(:, 2:N.TR);
 
-    % Run DMD
+    % Run DMD and reconstruction
     for m = 1:numel(labels.methods)
-        [Phi(:,:,s,m), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(X, Y, 'dt',2, 'exact',logical(strcmpi(labels.methods(m),"Exact")), 'r',N.TR-1);  % standard
+        [Phi(:,:,s,m), mu(:,s), lambda(:,s), diagS(:,s), x0(:,s)] = DMD(X, Y, 'dt',2, 'exact',logical(strcmpi(labels.methods(m),"Exact")), 'r',N.TR-1);
+        [Xhat(:,:,s,m), ~] = DMD_recon(Phi(:,:,s,m), lambda(:,m), x0(:,m), N.TR);    % compute reconstruction for each method & number of modes
+        msqe(:,s,m) = rmse(Xhat(:,:,s,m), FNC{s});                                   % Compute MSE per sample (TR)
     end
 
     % Compare exact vs. standard DMD
     D = Phi(:,:,s,1) - Phi(:,:,s,2);
     d = nnz(abs(D) >= eps);
     if d
-        dstnc{s} = abs(Phi(:,:,s,1) - Phi(:,:,s,2));
-    else
-        dstnc{s} = [];
+        dstnc(:,:,s) = abs(Phi(:,:,s,1) - Phi(:,:,s,2));
     end
 
     % compute true subject-level static FNCs
@@ -251,50 +252,9 @@ for s = 1:sum(N.subjects{:,:})
 end
 
 % Check if exact and standard SVD produce same outputs
-i = cellfun(@isempty, dstnc);
-if nnz(i) == length(dstnc)
-
-    % Compute reconstructed time courses
-    Phi = squeeze(Phi(:,:,:,strcmpi(labels.methods, "exact")));    % keep exact DMD
-    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}));
-    for s = 1:sum(N.subjects{:,:})
-        [Xhat(:,:,s), ~] = DMD_recon(Phi(:,:,s), lambda(:,s), x0(:,s), N.TR-1);
-    end
-else
+d = squeeze(sum(dstnc, [1 2]));
+if nnz(d)
     warning("DMD methods do not concur!");
-
-    % Compute reconstructed time courses
-    dstnc = zeros(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
-    Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}), numel(labels.methods));
-    for s = 1:sum(N.subjects{:,:})
-        % reconstruct from DMD
-        for m = 1:numel(labels.methods)
-            [Xhat(:,:,s,m), ~] = DMD_recon(Phi(:,:,s,m), lambda(:,s), x0(:,s), N.TR-1);
-        end
-        dstnc(:,:,s) = abs(Phi(:,:,s,strcmpi(labels.methods, "standard")) - Phi(:,:,s,strcmpi(labels.methods, "exact")));
-    end
-end
-
-% Reconstruct with different numbers of modes
-Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}), numel(labels.methods), numel(N.modes)+1);
-for s = 1:sum(N.subjects{:,:})
-    % get N.modes most powerful modes per subject
-    i = true(numel(N.modes)+1, N.TR-1);
-    [~, ind] = sort(P(:,s));
-    for m = 1:numel(N.modes)
-        i(m+1, ind(1:N.modes(m),:)) = false;
-        i(m+1,:) = ~i(m+1,:);
-    end
-    clear ind m
-
-    % Compute reconstructions and RMSQE
-    for m = 1:numel(labels.methods)     % test both standard and exact DMD
-        for n = 1:numel(N.modes)+1      % test reconstruction with several numbers of modes
-            [Xhat(:,:,s,m,n), ~] = DMD_recon(Phi(:,:,s,m), lambda(:,m), x0(:,m), N.TR, 'keep_modes',i(n,:));    % compute reconstruction for each method & number of modes
-            msqe(:,s,m,n) = rmse(Xhat(:,:,s,m,n), FNC{s});                                                   % Compute MSE per sample (TR)
-        end
-    end
 end
 clear i g s d m n
 
