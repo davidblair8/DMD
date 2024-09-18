@@ -130,10 +130,9 @@ clear d i r
 FNC = cellfun(@transpose, DFNC_FBIRN, 'UniformOutput',false);
 
 % demean FNC data
-mFNC = cellfun(@mean, cellfun(@mean, DFNC_FBIRN, 'UniformOutput',false), 'UniformOutput',false);
+mFNC = cellfun(@mean, DFNC_FBIRN, 'UniformOutput',false);
 mFNC = cellfun(@transpose, mFNC, 'UniformOutput',false);
 FNC = cellfun(@minus, FNC, mFNC, 'UniformOutput',false);
-clear DFNC_FBIRN mFNC
 
 % Set counters
 N.fig = 1;                                  % figures
@@ -268,18 +267,18 @@ if nnz(i) == length(dstnc)
 
         % Plot true group sFNC
         subplot(2,2,1);
-        display_FNC(icatb_vec2mat(sFNC(:,g))); hold on
+        display_FNC(icatb_vec2mat(sFNC(:,g)), [0.25 1.5]); hold on
         title(strjoin(["True sFNC of", labels.diagnosis(g)]));
 
         % Display group dFNC reconstruction
         [Xhat(:,:,g), ~] = DMD_recon(Phi(:,:,g), lambda(:,g), x0(:,g), N.TR-1);
         subplot(2,2,2); title(strjoin(["Reconstructed sFNC of", labels.diagnosis(g)]));
-        display_FNC(icatb_vec2mat(mean(Xhat(:,:,g),2))); hold on
+        display_FNC(icatb_vec2mat(mean(Xhat(:,:,g),2)), [0.25 1.5]); hold on
 
         % Plot difference between true, reconstructed sFNC
         d = sFNC(:,g) - mean(Xhat(:,:,g),2);
         subplot(2,2,4); title("True sFNC - Reconstructed sFNC", labels.diagnosis(g));
-        display_FNC(icatb_vec2mat(d)); hold on
+        display_FNC(icatb_vec2mat(d), [0.25 1.5]); hold on
     end
 else
     warning("DMD methods do not concur!");
@@ -338,7 +337,7 @@ for g = 1:N.conditions
     xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
     xlim([min(f_sort) max(f_sort)]);
     title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]));
-    legend("Cumulative Power", "90%2 of Power", 'Location','southeast');
+    legend("Cumulative Power", "90% of Power", 'Location','southeast');
 end
 N.fig = N.fig + 2*g;
 clear g X Y d D i P_sort f_sort lambda_sort
@@ -519,7 +518,7 @@ for g = 1:N.conditions                  % test both groups
         % Plot FN courses over time as a function of number of modes
         ii = [2 3 4 6 7 8];
         for k = 1:length(c)
-            [Xhat, ~] = DMD_recon(Phi(:,i(k+1),g,s), lambda(i(k+1),g), x0(:,g), N.TR*N.subjects{:,labels.diagnosis(g)});    % five most powerful modes
+            [Xhat, ~] = DMD_recon(Phi(:,i(k+1),g,s), lambda(i(k+1),g), x0(:,g), N.TR*N.subjects{:,labels.diagnosis(g)});    % most powerful modes
             subplot(2,4,ii(k));
             plot(1:N.TR*N.subjects{:,labels.diagnosis(g)}, Xhat(ind.lin,:)); hold on;
             title("Reconstructed FNC Values", strjoin(["f =", num2str(f(i(k+1))), "Hz"]));
@@ -535,43 +534,49 @@ end
 clear i ii ind r c k m n e Xhat l
 
 
-%% Visualize modes
+%% Visualize most powerful modes
 
 % test both groups
 for g = 1:N.conditions
 
-    % sort frequencies, power
-    [f_sort, i] = sort(f(:,g));
-    P_sort = P(i,g);
+    % sort frequencies & power
+    [P_sort, i] = sort(P(:,g));
+    f_sort = f(i,g);
 
-    % test both standard and exact DMD
-    for s = 1:numel(labels.methods)
-
-        % remove duplicate (negative) modes
-        Phi_sort = Phi(:,i,g,s);
+    % visualize selection of harmonic modes
+    for j = 1:nnz(cumsum(P_sort)./max(cumsum(P_sort)) < 0.1)
         
-        % get amplitudes as function of frequency
-        l.r = max(abs(real(Phi_sort)));
-        l.i = max(abs(imag(Phi_sort)));
-        l.t = max(abs(Phi_sort));
+        % Open figure
+        F(N.fig) = figure; F(N.fig).OuterPosition = [0 0 1055 1055]; N.fig = N.fig + 1;
 
-        % visualize dominant harmonic modes
-        for j = 1:nnz(cumsum(P_sort)./max(cumsum(P_sort)) < 0.1)
+        % test both standard and exact DMD
+        for s = 1:numel(labels.methods)
+
+            % sort modes
+            Phi_sort = Phi(:,i,g,s);
             Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j)));
-            F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1920 1055]; N.fig = N.fig + 1;
-            subplot(1,2,1); display_FNC(real(Phi_mat), [0.25 1.5]);
-            title("Mode (Real Part)"); hold on;
-            subplot(1,2,2); display_FNC(imag(Phi_mat), [0.25 1.5], [-max(l.i) max(l.i)]);
-            title("Mode (Imaginary Part)"); hold on;
-            sgtitle(strjoin([labels.diagnosis(g), ", ", labels.methods(s) " DMD, f = " , num2str(f_sort(j))], ""));
+            
+            % real part
+            subplot(numel(labels.methods), 2, 2*s-1);
+            display_FNC(real(Phi_mat), [0.25 1.5]);
+            title("Mode (Real Part)", strjoin([labels.methods(s) " DMD"])); hold on;
+
+            % imaginary part
+            subplot(numel(labels.methods), 2, 2*s);
+            display_FNC(imag(Phi_mat), [0.25 1.5], [-max(real(Phi_mat),[],"all") max(real(Phi_mat),[],"all")]);
+            title("Mode (Imaginary Part)", strjoin([labels.methods(s) " DMD"])); hold on;
+            sgtitle(strjoin([labels.diagnosis(g), ", f = " , num2str(f_sort(j))], ""));
         end
     end
+        
+    % get amplitudes as function of frequency
+    l.r = max(abs(real(Phi_sort)))';
+    l.i = max(abs(imag(Phi_sort)))';
+    l.t = max(abs(Phi_sort))';
 
     % visualize amplitudes as function of frequency
-    F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1100 1055]; N.fig = N.fig+1;
-    plot(f_sort, l.r, 'r'); hold on
-    plot(f_sort, l.i, 'b');
-    plot(f_sort, l.t, 'k');
+    F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1055 1055]; N.fig = N.fig+1;
+    scatter(f_sort, [l.r, l.i, l.t], "filled"); hold on
     title('Absolute Amplitudes by Frequency,', labels.diagnosis(g));
     xlabel('Frequency (Hz)'); ylabel('Amplitude');
     legend('Real', 'Imaginary', 'Total');
