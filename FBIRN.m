@@ -318,29 +318,33 @@ clear i g s d m
 
 % preallocate arrays
 f = nan(N.TR-1, N.conditions);
-P = nan(N.TR-1, N.conditions);
+P = nan(N.TR-1, N.conditions, numel(labels.methods));
 
 % Compute group spectra and mode power
 for g = 1:N.conditions
+    for s = 1:numel(labels.methods)
     % Compute and plot spectra
-    [f(:,g), P(:,g), F(N.fig+2*(g-1))] = DMD_spectrum(Phi(:,:,g,1), mu(:,g), 'plotit',1);  % power
-    F(N.fig+2*(g-1)).OuterPosition = [1 1 1055 1055]; hold on;   % increase figure size
-    title(strjoin(["Power Spectrum for", labels.diagnosis(g)]));
-    xlim([min(f(:,g)) max(f(:,g))]); ylim([0 max(P(:,g))]);
-
-    % Plot cumulative power of the modes
-    [f_sort, i] = sort(f(:,g),1);
-    P_sort = P(i,g);
-    F(N.fig+(2*g-1)) = figure; F(N.fig+(2*g-1)).OuterPosition = [1 1 1055 1055];
-    plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
-    plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
-    xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
-    xlim([min(f_sort) max(f_sort)]);
-    title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]));
-    legend("Cumulative Power", "90% of Power", 'Location','southeast');
+        [f(:,g), P(:,g,s), F(N.fig+2*(g-1))] = DMD_spectrum(Phi(:,:,g,1), mu(:,g), 'plotit',1);  % power
+        F(N.fig+2*(g-1)).OuterPosition = [1 1 1055 1055]; hold on;   % increase figure size
+        title(strjoin(["Power Spectrum for", labels.diagnosis(g)]), strjoin([labels.methods(s), "DMD"]));
+        xlim([min(f(:,g)) max(f(:,g))]); ylim([0 max(P(:,g,s))]);
+    
+        % Plot cumulative power of the modes
+        [f_sort, i] = sort(f(:,g),1);
+        P_sort = P(i,g,s);
+        F(N.fig+(2*g-1)) = figure; F(N.fig+(2*g-1)).OuterPosition = [1 1 1055 1055];
+        plot(f_sort, cumsum(P_sort)./max(cumsum(P_sort),[],'all')); hold on;
+        plot([min(f_sort) max(f_sort)], [0.9 0.9], '-r');
+        xlabel("frequency (Hz)"); ylabel("% Cumulative Power");
+        xlim([min(f_sort) max(f_sort)]);
+        title(strjoin(["Cumulative Power for", labels.diagnosis(g), "Group"]), strjoin([labels.methods(s), "DMD"]));
+        legend("Cumulative Power", "90% of Power", 'Location','southeast');
+    end
 end
 N.fig = N.fig + 2*g;
 clear g X Y d D i P_sort f_sort lambda_sort
+
+
 
 
 %% Check reconstruction error
@@ -436,17 +440,6 @@ end
 clear g s m e i mFNC Xhat t
 
 
-%% Visualize three most powerful modes for each group
-
-% for g = 1:N.conditions
-%     for s = 1:numel(labels.methods)
-%         for m = 1:numel(N.modes)+1
-%             [Phi(:,:,g,s), mu(:,g), lambda(:,g), diagS(:,g), x0(:,g)]
-%         end
-%     end
-% end
-
-
 %% Plot eigenvalues on unit circle
 
 % test both groups
@@ -493,6 +486,7 @@ ind.lin = find(m);
 
 for g = 1:N.conditions                  % test both groups
     [~, i] = sort(f(:,g));              % sort frequencies
+    ii = [2 3 4 6 7 8];                 % set subplot locations
     for s = 1:numel(labels.methods)     % test both standard and exact DMD
 
         % Open figure
@@ -516,12 +510,11 @@ for g = 1:N.conditions                  % test both groups
         legend(num2str(ind.rc));
         
         % Plot FN courses over time as a function of number of modes
-        ii = [2 3 4 6 7 8];
         for k = 1:length(c)
             [Xhat, ~] = DMD_recon(Phi(:,i(k+1),g,s), lambda(i(k+1),g), x0(:,g), N.TR*N.subjects{:,labels.diagnosis(g)});    % most powerful modes
             subplot(2,4,ii(k));
             plot(1:N.TR*N.subjects{:,labels.diagnosis(g)}, Xhat(ind.lin,:)); hold on;
-            title("Reconstructed FNC Values", strjoin(["f =", num2str(f(i(k+1))), "Hz"]));
+            title("Reconstructed FNC Values", strjoin(["f =", num2str(f(i(k+1),g)), "Hz"]));
             xlabel("Time Points"); ylabel("Real Amplitude");
             xlim([1 N.TR*10]);
             legend(num2str(ind.rc));
@@ -539,12 +532,23 @@ clear i ii ind r c k m n e Xhat l
 % test both groups
 for g = 1:N.conditions
 
-    % sort frequencies & power
-    [P_sort, i] = sort(P(:,g));
-    f_sort = f(i,g);
+    % sort modes
+    [P_sort, i] = sort(squeeze(P(:,g,:)), 'descend');
+    f_sort = f(i(:,g), g);
+    Phi_sort = squeeze(Phi(:,i(:,g),g,:));
+
+    % select modes which contain top 10% of power
+    d = nnz(cumsum(P_sort(:,g))./max(cumsum(P_sort(:,g))) < 0.1);
+    f_sort = f_sort.*(cumsum(P_sort(:,g))./max(cumsum(P_sort(:,g))) < 0.1);
+    P_sort(:,g) = P_sort(:,g).*(cumsum(P_sort(:,g))./max(cumsum(P_sort(:,g))) < 0.1);
+
+    % Sort surviving modes by frequency
+    [f_sort(1:d), j] = sort(f_sort(1:d));
+    P_sort(1:d, g) = P_sort(j, g);
+    Phi_sort(:,1:d,:) = Phi_sort(:,j,:);
 
     % visualize selection of harmonic modes
-    for j = 1:nnz(cumsum(P_sort)./max(cumsum(P_sort)) < 0.1)
+    for j = 1:d
         
         % Open figure
         F(N.fig) = figure; F(N.fig).OuterPosition = [0 0 1055 1055]; N.fig = N.fig + 1;
@@ -553,8 +557,8 @@ for g = 1:N.conditions
         for s = 1:numel(labels.methods)
 
             % sort modes
-            Phi_sort = Phi(:,i,g,s);
-            Phi_mat = icatb_vec2mat(squeeze(Phi_sort(:,j)));
+            Phi_mat = squeeze(Phi_sort(:,j,s));
+            Phi_mat = icatb_vec2mat(squeeze(Phi_mat));
             
             % real part
             subplot(numel(labels.methods), 2, 2*s-1);
@@ -568,21 +572,21 @@ for g = 1:N.conditions
             sgtitle(strjoin([labels.diagnosis(g), ", f = " , num2str(f_sort(j))], ""));
         end
     end
-        
+    
     % get amplitudes as function of frequency
-    l.r = max(abs(real(Phi_sort)))';
-    l.i = max(abs(imag(Phi_sort)))';
-    l.t = max(abs(Phi_sort))';
+    l.r = mean(abs(real(Phi(:,:,g,:))), [1 4])';
+    l.i = mean(abs(imag(Phi(:,:,g,:))), [1 4])';
+    l.t = mean(abs(Phi(:,:,g,:)), [1 4])';
 
     % visualize amplitudes as function of frequency
     F(N.fig) = figure; F(N.fig).OuterPosition = [1 1 1055 1055]; N.fig = N.fig+1;
-    scatter(f_sort, [l.r, l.i, l.t], "filled"); hold on
+    scatter(f(:,g), [l.r, l.i, l.t], "filled"); hold on
     title('Absolute Amplitudes by Frequency,', labels.diagnosis(g));
     xlabel('Frequency (Hz)'); ylabel('Amplitude');
     legend('Real', 'Imaginary', 'Total');
     xlim([0 max(f,[],"all")]);
 end
-clear i j Phi_mat phase_mat Phi_sort phi_sort f_sort P_sort l s g
+clear i j Phi_mat phase_mat Phi_sort phi_sort f_sort P_sort l s g d
 
 
 %% Save results & figure(s)
