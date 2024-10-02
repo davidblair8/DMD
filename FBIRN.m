@@ -455,9 +455,9 @@ for g = 1:N.conditions
     F(N.fig) = figure; N.fig = N.fig+1;
     F(N.fig-1).OuterPosition = [1 1 1055 1055];
     pbaspect([1 1 1]); hold on
-    s(1) = scatter(r(c(:,1)), i(c(:,1)), 'MarkerFaceColor','r');
-    s(2) = scatter(r(c(:,2)), i(c(:,2)), 'MarkerFaceColor','b');
-    s(3) = scatter(r(c(:,3)), i(c(:,3)), 'MarkerFaceColor','g');
+    s(1) = scatter(r(c(:,1)), i(c(:,1)), 'r',"filled");
+    s(2) = scatter(r(c(:,2)), i(c(:,2)), 'b',"filled");
+    s(3) = scatter(r(c(:,3)), i(c(:,3)), 'g',"filled");
     % scatter(r, i, 'MarkerEdgeColor','k');
     
     % Plot unit circle in real, imaginary space
