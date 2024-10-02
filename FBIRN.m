@@ -124,7 +124,7 @@ ind.FND = array2table(ind.FND, 'RowNames',labels.ROI.Properties.RowNames, 'Varia
 clear d i r
 
 
-%% Concatenate and index time series
+%% Concatenate and demean time series
 
 % rename FNC data
 FNC = cellfun(@transpose, DFNC_FBIRN, 'UniformOutput',false);
@@ -133,6 +133,9 @@ FNC = cellfun(@transpose, DFNC_FBIRN, 'UniformOutput',false);
 mFNC = cellfun(@mean, DFNC_FBIRN, 'UniformOutput',false);
 mFNC = cellfun(@transpose, mFNC, 'UniformOutput',false);
 FNC = cellfun(@minus, FNC, mFNC, 'UniformOutput',false);
+
+
+%% index time series
 
 % Set counters
 N.fig = 1;                                  % figures
