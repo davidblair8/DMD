@@ -133,6 +133,7 @@ FNC = cellfun(@transpose, DFNC_FBIRN, 'UniformOutput',false);
 mFNC = cellfun(@mean, DFNC_FBIRN, 'UniformOutput',false);
 mFNC = cellfun(@transpose, mFNC, 'UniformOutput',false);
 FNC = cellfun(@minus, FNC, mFNC, 'UniformOutput',false);
+clear mFNC
 
 
 %% index time series
