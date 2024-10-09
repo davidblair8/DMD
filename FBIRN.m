@@ -552,7 +552,7 @@ F(N.fig-1).OuterPosition = [1 1 1920 1055];
 for s = 1:numel(labels.methods)
     subplot(1,2,s);
     scatter(f, [l.r(s,:); l.i(s,:); l.t(s,:)], "filled"); hold on
-    title('Absolute Amplitudes by Frequency', strjoin([labels.methods(s), "DMD"]));
+    title('Mean Absolute Amplitudes by Frequency', strjoin([labels.methods(s), "DMD"]));
     xlabel('Frequency (Hz)'); ylabel('Amplitude');
     legend('Real', 'Imaginary', 'Total');
     xlim([0 max(f,[],"all")]);
