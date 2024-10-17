@@ -195,7 +195,7 @@ N.modes = 3;
 %% Define filename based on parameters
 
 % define core file name
-fileName = "subjects_demeaned";
+fileName = "groups_demeaned";
 
 % Get file list
 fList = dir(fullfile(pth{5}, strcat(strjoin([fileName, "iteration"], '_'), '*.mat')));
