@@ -29,6 +29,7 @@ fpth{3,1} = fullfile("MATLAB","dmd-neuro");
 fpth{4,1} = fullfile("MATLAB","gift","GroupICAT","icatb");
 fpth{5,1} = fullfile("MATLAB","permutationTest");
 fpth{6,1} = fullfile("MATLAB","BCT");
+fpth{6,1} = fullfile("MATLAB","DataViz","daviolinplot");
 
 % Add relevant paths
 addpath(genpath(fullfile(pth{2}, fpth{1})));
@@ -223,7 +224,7 @@ Phi = Phi(:,:,strcmpi(labels.methods,"Exact"));
 
 % Compute and plot mode spectra and mode power
 [f, P, F(N.fig)] = DMD_spectrum(Phi, mu, 'plotit',1);   % power
-F(N.fig).OuterPosition = [1 1 1055 1055]; hold on;   % increase figure size
+F(N.fig).OuterPosition = [1 1 1055 1055]; hold on;      % increase figure size
 title("DMD Power Spectrum");
 xlim([min(f) max(f)]); ylim([0 max(P)]);
 
@@ -277,17 +278,117 @@ clear i r c theta
 %% Map group-level modes to subject time courses
 
 % Preallocate arrays
-tc = nan(N.TR, N.TR-1, sum(N.subjects{:,:}));
-spatial_maps = nan(N.TR-1, N.ROI*(N.ROI-1)/2, sum(N.subjects{:,:}));
-Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}));
+tc_r = nan(N.TR, N.TR-1, sum(N.subjects{:,:}));
+tc_i = nan(N.TR, N.TR-1, sum(N.subjects{:,:}));
+spatial_maps_real = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+spatial_maps_imag = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+% Xhat = nan(N.ROI*(N.ROI-1)/2, N.TR, sum(N.subjects{:,:}));
 
 % Regress subject-level modes and time courses from dataset-level modes
 for s = 1:sum(N.subjects{:,:})
-    y = DFNC_FBIRN{s}';
-    [tc(:,:,s), spatial_maps(:,:,s)] = icatb_dual_regress(y, Phi);
-    [Xhat(:,:,s), ~] = DMD_recon(Phi, lambda, FNC{s}(:,1), N.TR);
+    [tc_r(:,:,s), m] = icatb_dual_regress(FNC{s}, real(Phi));
+    spatial_maps_real(:,:,s) = m';
+    [tc_i(:,:,s), m] = icatb_dual_regress(FNC{s}, imag(Phi));
+    spatial_maps_imag(:,:,s) = m';
+    % [Xhat(:,:,s), ~] = DMD_recon(Phi, lambda, FNC{s}(:,1), N.TR);
 end
-clear y
+clear m s
+
+% % correct scaling of spatial maps and time courses
+% spatial_maps = spatial_maps/10^2;
+% tc = tc/10^2;
+
+
+%% Visualize random selection of subject modes
+
+% Select subjects and modes to plot
+sp = round(sum(N.subjects{:,:})*rand([3 1]));
+[~, ia, ic] = unique(P);
+ia = flip(ia); ic = flip(ic);   % Identify most powerful modes
+
+% Plot real parts of most powerful modes for selected subjects
+for c = 1:4
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for s = 1:numel(sp)
+        subplot(2,3, s);
+        display_FNC(icatb_vec2mat(real(spatial_maps_real(:,ia(c),sp(s)))), [0.25 1.5]); hold on
+        title(strjoin(["Subject ", num2str(sp(s)), ", Real Part"], ""));
+
+        subplot(2,3, s+3);
+        display_FNC(icatb_vec2mat(real(spatial_maps_imag(:,ia(c),sp(s)))), [0.25 1.5]); hold on
+        title(strjoin(["Subject ", num2str(sp(s)), ", Imaginary Part"], ""));
+
+        sgtitle(strjoin(["Mode", num2str(ia(c))]));
+    end
+end
+clear ia ic c s
+
+
+%% Extract subject-level power spectra
+
+P_sub = nan(N.TR-1, sum(N.subjects{:,:}));
+for s = 1:sum(N.subjects{:,:})
+    [~, P_sub(:,s)] = DMD_spectrum(spatial_maps_real(:,:,s), mu, 'plotit',0);   % power
+end
+
+% extract group means, medians, stds of power spectra
+P_mean = nan(N.TR-1, N.conditions);
+P_median = nan(N.TR-1, N.conditions);
+P_std = nan(N.TR-1, N.conditions);
+for c = 1:N.conditions
+    P_mean(:,c) = mean(P_sub(:, strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c))), 2);
+    P_median(:,c) = median(P_sub(:, strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c))), 2);
+    P_std(:,c) = std(P_sub(:, strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c))), 0, 2);
+end
+
+% identify unique frequencies
+[~, ia, ic] = unique(f);
+
+% plot group means and standard deviations of power spectra
+F(N.fig) = figure; N.fig = N.fig+1;
+F(N.fig-1).OuterPosition = [1 1 1920 1055];
+subplot(3,1,1);
+bar(f(ia), log(P_mean(ia,:)));
+% errorbar(repmat(f(ia), [1 2]), P_mean(ia,:), P_std(ia,:), "_");
+title("Means of Power Spectra"); legend(labels.diagnosis);
+hold on;
+
+% plot group medians and standard deviations of power spectra
+subplot(3,1,2);
+bar(f(ia), log(P_median(ia,:)));
+% errorbar(repmat(f(ia), [1 2]), P_median(ia,:), P_std(ia,:), "_");
+title("Medians of Power Spectra"); legend(labels.diagnosis);
+hold on;
+
+% plot group standard deviations of power spectra
+subplot(3,1,3);
+bar(f(ia), log(P_std(ia,:)));
+title("Standard Deviations of Power Spectra"); legend(labels.diagnosis);
+hold on;
+
+% plot group power spectra distributions as violin plots
+F(N.fig) = figure; N.fig = N.fig+1;
+F(N.fig-1).OuterPosition = [1 1 1920 1055];
+m = [0 0.4470 0.7410; 0.8500 0.3250 0.0980];
+h = daviolinplot(P_sub(ia,:)', 'groups',analysis_data{:,"Diagnosis"}, 'xtlabels',f(ia), 'colors',m);    % each frequency is a different condition;
+title("Power Spectra Distributions"); legend(labels.diagnosis);                                         % groups defined along subjects
+hold on
+clear m ia ic
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 %% Plot sFNCs and test for fidelity
