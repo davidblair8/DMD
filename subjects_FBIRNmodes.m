@@ -278,19 +278,21 @@ clear i r c theta
 %% Map group-level modes to subject time courses
 
 % Preallocate arrays
-tc = nan(N.TR, N.TR-1, sum(N.subjects{:,:}));
-sm = nan(N.ROI*(N.ROI-1)/2, N.TR-1, sum(N.subjects{:,:}));
+tc = nan(N.modes, N.TR, sum(N.subjects{:,:}));
+sm = nan(N.ROI*(N.ROI-1)/2, N.modes, sum(N.subjects{:,:}));
 
 % Select modes to analyze
 [~, ia, ic] = unique(P);
-ia = flip(ia); ic = flip(ic);   % Identify most powerful modes
+ia = flip(ia); ic = flip(ic);   % list modes by power
 
 % Regress subject-level modes and time courses from dataset-level modes
 for s = 1:sum(N.subjects{:,:})
     for t = 1:N.TR
-        tc(t,:,s) = FNC{s}'/Phi';
+        tc(:,t,s) = regress(FNC{s}(:,t), Phi(:, ia(1:N.modes)));
     end
-    sm(:,:,s) = FNC{s}'\tc(:,:,s);
+    for c = 1:N.ROI*(N.ROI-1)/2
+        sm(c,:,s) = regress(FNC{s}(c,:)', tc(:,:,s)');
+    end
 end
 clear m s t ans tc_i tc_r spatial_maps_real spatial_maps_imag
 
@@ -305,16 +307,16 @@ clear m s t ans tc_i tc_r spatial_maps_real spatial_maps_imag
 sp = round(sum(N.subjects{:,:})*rand([3 1]));
 
 % Plot real parts of most powerful modes for selected subjects
-for c = 1:4
+for c = 1:N.modes
     F(N.fig) = figure; N.fig = N.fig+1;
     F(N.fig-1).OuterPosition = [1 1 1920 1080];
     for s = 1:numel(sp)
         subplot(2,3, s);
-        display_FNC(icatb_vec2mat(real(sm(:,ia(c),sp(s)))), [0.25 1.5]); hold on
+        display_FNC(icatb_vec2mat(real(sm(:,c,sp(s)))), [0.25 1.5]); hold on
         title(strjoin(["Subject ", num2str(sp(s)), ", Real Part"], ""));
 
         subplot(2,3, s+3);
-        display_FNC(icatb_vec2mat(real(sm(:,ia(c),sp(s)))), [0.25 1.5]); hold on
+        display_FNC(icatb_vec2mat(imag(sm(:,c,sp(s))')), [0.25 1.5]); hold on
         title(strjoin(["Subject ", num2str(sp(s)), ", Imaginary Part"], ""));
 
         sgtitle(strjoin(["Mode", num2str(ia(c))]));
