@@ -449,57 +449,65 @@ end
 
 % Bonferroni correction
 h.BF = (p.ks < 0.05/(N.ROI*(N.ROI-1)/2));
+h.BF = h.BF(:,:,1) | h.BF(:,:,2);
 
 % Benjamini-Hochberg FDR
-h.BH = zeros(N.ROI*(N.ROI-1)/2, N.modes);
+h.FDR = zeros(N.ROI*(N.ROI-1)/2, N.modes);
 for c = 1:2
     hd = zeros(N.ROI*(N.ROI-1)/2, N.modes);
     pval = reshape(p.ks, [numel(p.ks) 1]);
     rejectedH0s = FDR_benjHoch(pval, 0.05, 'positive', true, false, false);
     hd(rejectedH0s) = 1;
-    h.BH(:,:) = hd;
+    h.FDR(:,:) = hd;
 end
 clear c m n hd rejectedH0s pval
 
-% Visualize significant connections
-if nnz(h.BH) > 0 || nnz(h.BF) > 0
-    if nnz(h.BH) > 0
-        for c = 1:N.conditions
-            F(N.fig) = figure; N.fig = N.fig+1;
-            F(N.fig-1).OuterPosition = [1 1 1920 1080];
-            for m = 1:N.modes
-                sm_mask = real(squeeze(mean(sm_sep{c}(:,:,m),1)))';
-                sm_mask(~h.BH(:,m)) = 0;
-                if nnz(sm_mask) > 0
-                    subplot(2,3,m);
-                    display_FNC(icatb_vec2mat(sm_mask), [0.05 1.5]); hold on
-                    title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
-                end
-            end
-            sgtitle(["Benjamini-Hochberg Correction", strjoin([labels.diagnosis(c), "Connectivity Map"])]);
-        end
-    end
 
-    if nnz(h.BF) > 0
-        for c = 1:N.conditions
-            F(N.fig) = figure; N.fig = N.fig+1;
-            F(N.fig-1).OuterPosition = [1 1 1920 1080];
-            for m = 1:N.modes
-                sm_mask = real(squeeze(mean(sm_sep{c}(:,:,m),1)))';
-                sm_mask(~h.BF(:,m)) = 0;
-                if nnz(sm_mask) > 0
-                    subplot(2,3,m);
-                    display_FNC(icatb_vec2mat(sm_mask), [0.05 1.5]); hold on
-                    title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
-                end
-            end
-            sgtitle(["Bonferroni Correction", strjoin([labels.diagnosis(c), "Connectivity Map"])]);
+%% Visualize significant connections
+
+% FDR-significant connections
+if nnz(h.FDR) > 0
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for m = 1:N.modes
+        if nnz(h.FDR(:,m)) > 0
+            subplot(2,3,m);
+            f = icatb_vec2mat(zscore(Phi(:,ia(m))));
+            s = find(triu(f));
+            s = s(logical(h.FDR(:,m)));
+            sm_mask = tril(f);
+            sm_mask(s) = f(s);
+            display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
         end
     end
+    sgtitle("Benjamini-Hochberg Correction");
 end
-clear c m sm_mask
+clear f sm_mask s m
 
-% view z-scored modes from random subjects
+% Bonferroni-significant connections
+if nnz(h.BF) > 0
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for m = 1:N.modes
+        if nnz(h.BF(:,m)) > 0
+            subplot(2,3,m);
+            f = icatb_vec2mat(zscore(Phi(:,ia(m))));
+            s = find(triu(f));
+            s = s(logical(h.BF(:,m)));
+            sm_mask = tril(f);
+            sm_mask(s) = f(s);
+            display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
+        end
+    end
+    sgtitle("Bonferroni Correction");
+end
+clear f sm_mask s m
+
+
+%% view z-scored modes from random subjects
+
 for m = 1:N.modes
     for c = 1:N.conditions
         F(N.fig) = figure; N.fig = N.fig+1;
@@ -541,6 +549,7 @@ for m = 1:N.modes
 end
 clear c s m k
 
+
 %% Network-Based Statistic
 
 % Calculate the NBS
@@ -553,13 +562,50 @@ i = array2table(i, "VariableNames", labels.diagnosis);
 contrast = [1 -1; -1 1];
 tstat = [3 3.5];
 for m = 1:N.modes
+    mlabel(m) = strjoin(["Mode", num2str(ia(m))]);
     EC = squeeze(sm(:,m,:));
     EC = permute(icatb_vec2mat(EC'), [2 3 1]);
-    [nbs{m}, STATS{m}, GLM{m}, storarray{m}] = runNBS(EC, contrast, i, N, tstat);
+    [nbs{m}, STATS{m}, GLM{m}, storarray{m}] = runNBS(EC, contrast, i, N, tstat, labels);
 end
-clear c i m s
+nbs = cell2table(nbs', "VariableNames",mlabel);
+clear c m s mlabel
 
 % Display the NBS
+col = ["r" "b"];
+F(N.fig) = figure; N.fig = N.fig+1;
+F(N.fig-1).OuterPosition = [1 1 1920 1080];
+for m = find(~cellfun(@isempty, storarray))
+    subplot(2,3,m); pbaspect([1 1 1]);
+    display_FNC(zeros(N.ROI), [0.05 1.5], [], false); hold on
+    for c = 1:size(n.(m){1,1},2)
+        [r, cl] = find(full(n.(m){1,1}{2,c}{:,:}));
+        k(c) = scatter(cl, r, 30, col(c), "square", "filled"); hold on
+    end
+    legend(k, n.(m){1,1}.Properties.VariableNames);
+    title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
+end
+sgtitle("Network-Based Statistic");
+clear m c col r cl k
+
+
+%% Visualize significant connections
+
+% FDR-significant connections
+if nnz(h.FDR) > 0
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for m = 1:N.modes
+        subplot(2,3,m); pbaspect([1 1 1]);
+        f = icatb_vec2mat(zscore(Phi(:,ia(m))));
+        s = find(triu(f));
+        s = s(logical(h.FDR(:,m)));
+        sm_mask = tril(f);
+        sm_mask(s) = f(s);
+        display_FNC(real(sm_mask), [0.05 1.5]); hold on
+        title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
+    end
+    sgtitle("Benjamini-Hochberg Correction");
+end
 
 
 %% Save results & figure(s)
@@ -570,7 +616,7 @@ for c = 1:N.fig-1
     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
 end
-clear c F a ax axes ts
+clear c F a ax axes ts i
 
 % Save files
 N.fig = N.fig - 1;
