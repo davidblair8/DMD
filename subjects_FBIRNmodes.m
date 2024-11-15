@@ -420,6 +420,50 @@ end
 clear c s
 
 
+%% view z-scored modes from random subjects
+
+for m = 1:N.modes
+    for c = 1:N.conditions
+        F(N.fig) = figure; N.fig = N.fig+1;
+        F(N.fig-1).OuterPosition = [1 1 1920 1080];
+        subplot(2,3, 1);
+        display_FNC(icatb_vec2mat(real(squeeze(mean(sm_sep{c}(:,:,m),1)))'), [0.05 1.5]); hold on
+        title(strjoin(["Mode", num2str(ia(m))]), "Real Part");
+        subplot(2,3, 4);
+        display_FNC(icatb_vec2mat(imag(squeeze(mean(sm_sep{c}(:,:,m),1)))'), [0.05 1.5]); hold on
+        title(strjoin(["Mode", num2str(ia(m))]), "Imaginary Part");
+    
+        for s = 1:numel(sp(:,c))
+            subplot(2,3, s+1);
+            display_FNC(icatb_vec2mat(real(sm(:,m,sp(s,c)))'), [0.05 1.5]); hold on
+            title(strjoin(["Subject ", num2str(sp(s,c)), ", Real Part"], ""));
+    
+            subplot(2,3, s+4);
+            display_FNC(icatb_vec2mat(imag(sm(:,m,sp(s,c)))'), [0.05 1.5]); hold on
+            title(strjoin(["Subject ", num2str(sp(s,c)), ", Imaginary Part"], ""));
+        end
+        sgtitle([strjoin(["z-Scored Mode", num2str(ia(m))]), labels.diagnosis(c)]);
+    end
+end
+
+% display mean modes from each condition
+for m = 1:N.modes
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1080 1080];
+    for c = 1:N.conditions
+        s = icatb_vec2mat(squeeze(mean(sm_sep{c},1))');
+        subplot(2,2,c);
+        display_FNC(real(squeeze(s(m,:,:))), [0.05 1.5]); hold on
+        title(labels.diagnosis(c), "Real Part");
+        subplot(2,2,c+2);
+        display_FNC(imag(squeeze(s(m,:,:))), [0.05 1.5]); hold on
+        title(labels.diagnosis(c), "Imaginary Part")
+    end
+    sgtitle(["Mean z-Scored FNC", strjoin(["Mode", num2str(ia(m))])]);
+end
+clear c s m k
+
+
 %% Search for group-level changes in spatial maps
 
 % organize spatial maps by group
@@ -472,82 +516,37 @@ if nnz(h.FDR) > 0
     for m = 1:N.modes
         if nnz(h.FDR(:,m)) > 0
             subplot(2,3,m);
-            f = icatb_vec2mat(zscore(Phi(:,ia(m))));
-            s = find(triu(f));
-            s = s(logical(h.FDR(:,m)));
-            sm_mask = tril(f);
-            sm_mask(s) = f(s);
+            subplot(2,3,m);
+            f = icatb_vec2mat(h.FDR(:,m));
+            [r,c] = find(triu(f));
+            sm_mask = tril(icatb_vec2mat(zscore(Phi(:,ia(m)))));
             display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            scatter(c, r, 30, 'r', "square", "filled"); hold on
             title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
         end
     end
     sgtitle("Benjamini-Hochberg Correction");
 end
-clear f sm_mask s m
+clear f sm_mask s m c r
 
-% Bonferroni-significant connections
+%% Bonferroni-significant connections
 if nnz(h.BF) > 0
     F(N.fig) = figure; N.fig = N.fig+1;
     F(N.fig-1).OuterPosition = [1 1 1920 1080];
     for m = 1:N.modes
         if nnz(h.BF(:,m)) > 0
             subplot(2,3,m);
-            f = icatb_vec2mat(zscore(Phi(:,ia(m))));
-            s = find(triu(f));
-            s = s(logical(h.BF(:,m)));
-            sm_mask = tril(f);
-            sm_mask(s) = f(s);
+            f = icatb_vec2mat(h.BF(:,m));
+            [r,c] = find(triu(f));
+            sm_mask = tril(icatb_vec2mat(zscore(Phi(:,ia(m)))));
             display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            scatter(c, r, 30, 'r', "square", "filled"); hold on
             title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
         end
     end
     sgtitle("Bonferroni Correction");
 end
-clear f sm_mask s m
-
-
-%% view z-scored modes from random subjects
-
-for m = 1:N.modes
-    for c = 1:N.conditions
-        F(N.fig) = figure; N.fig = N.fig+1;
-        F(N.fig-1).OuterPosition = [1 1 1920 1080];
-        subplot(2,3, 1);
-        display_FNC(icatb_vec2mat(real(squeeze(mean(sm_sep{c}(:,:,m),1)))'), [0.05 1.5]); hold on
-        title(strjoin(["Mode", num2str(ia(m))]), "Real Part");
-        subplot(2,3, 4);
-        display_FNC(icatb_vec2mat(imag(squeeze(mean(sm_sep{c}(:,:,m),1)))'), [0.05 1.5]); hold on
-        title(strjoin(["Mode", num2str(ia(m))]), "Imaginary Part");
-    
-        for s = 1:numel(sp(:,c))
-            subplot(2,3, s+1);
-            display_FNC(icatb_vec2mat(real(sm(:,m,sp(s,c)))'), [0.05 1.5]); hold on
-            title(strjoin(["Subject ", num2str(sp(s,c)), ", Real Part"], ""));
-    
-            subplot(2,3, s+4);
-            display_FNC(icatb_vec2mat(imag(sm(:,m,sp(s,c)))'), [0.05 1.5]); hold on
-            title(strjoin(["Subject ", num2str(sp(s,c)), ", Imaginary Part"], ""));
-        end
-        sgtitle([strjoin(["z-Scored Mode", num2str(ia(m))]), labels.diagnosis(c)]);
-    end
-end
-
-% display mean modes from each condition
-for m = 1:N.modes
-    F(N.fig) = figure; N.fig = N.fig+1;
-    F(N.fig-1).OuterPosition = [1 1 1080 1080];
-    for c = 1:N.conditions
-        s = icatb_vec2mat(squeeze(mean(sm_sep{c},1))');
-        subplot(2,2,c);
-        display_FNC(real(squeeze(s(m,:,:))), [0.05 1.5]); hold on
-        title(labels.diagnosis(c), "Real Part");
-        subplot(2,2,c+2);
-        display_FNC(imag(squeeze(s(m,:,:))), [0.05 1.5]); hold on
-        title(labels.diagnosis(c), "Imaginary Part")
-    end
-    sgtitle(["Mean z-Scored FNC", strjoin(["Mode", num2str(ia(m))])]);
-end
-clear c s m k
+clear f sm_mask s m c r
 
 
 %% Network-Based Statistic
@@ -586,26 +585,6 @@ for m = find(~cellfun(@isempty, storarray))
 end
 sgtitle("Network-Based Statistic");
 clear m c col r cl k
-
-
-%% Visualize significant connections
-
-% FDR-significant connections
-if nnz(h.FDR) > 0
-    F(N.fig) = figure; N.fig = N.fig+1;
-    F(N.fig-1).OuterPosition = [1 1 1920 1080];
-    for m = 1:N.modes
-        subplot(2,3,m); pbaspect([1 1 1]);
-        f = icatb_vec2mat(zscore(Phi(:,ia(m))));
-        s = find(triu(f));
-        s = s(logical(h.FDR(:,m)));
-        sm_mask = tril(f);
-        sm_mask(s) = f(s);
-        display_FNC(real(sm_mask), [0.05 1.5]); hold on
-        title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
-    end
-    sgtitle("Benjamini-Hochberg Correction");
-end
 
 
 %% Save results & figure(s)
