@@ -422,6 +422,19 @@ clear c s
 
 %% view z-scored modes from random subjects
 
+% organize spatial maps by group
+sm_sep = cell(N.conditions,1);
+i = nan(sum(N.subjects{:,:}), N.conditions);
+sp = nan(2, N.conditions);
+for c = 1:N.conditions
+    sm_sep{c} = zscore(sm(:,:,strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c))));
+    sm_sep{c} = permute(sm_sep{c}, [3 1 2]);
+
+    i(:,c) = strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c));
+    k = find(strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c)));
+    sp(:,c) = k(round(rand(2,1)*N.subjects{:,labels.diagnosis(c)}));
+end
+
 for m = 1:N.modes
     for c = 1:N.conditions
         F(N.fig) = figure; N.fig = N.fig+1;
@@ -466,19 +479,6 @@ clear c s m k
 
 %% Search for group-level changes in spatial maps
 
-% organize spatial maps by group
-sm_sep = cell(N.conditions,1);
-i = nan(sum(N.subjects{:,:}), N.conditions);
-sp = nan(2, N.conditions);
-for c = 1:N.conditions
-    sm_sep{c} = zscore(sm(:,:,strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c))));
-    sm_sep{c} = permute(sm_sep{c}, [3 1 2]);
-
-    i(:,c) = strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c));
-    k = find(strcmpi(analysis_data{:,"Diagnosis"},labels.diagnosis(c)));
-    sp(:,c) = k(round(rand(2,1)*N.subjects{:,labels.diagnosis(c)}));
-end
-
 % two-sample t-test
 [~,p.t2] = ttest2(sm_sep{1}, sm_sep{2});
 p.t2 = squeeze(p.t2);
@@ -496,40 +496,32 @@ h.BF = (p.ks < 0.05/(N.ROI*(N.ROI-1)/2));
 h.BF = h.BF(:,:,1) | h.BF(:,:,2);
 
 % Benjamini-Hochberg FDR
-h.FDR = zeros(N.ROI*(N.ROI-1)/2, N.modes);
+h.BH = zeros(N.ROI*(N.ROI-1)/2, N.modes, 2);
 for c = 1:2
     hd = zeros(N.ROI*(N.ROI-1)/2, N.modes);
-    pval = reshape(p.ks, [numel(p.ks) 1]);
+    pval = reshape(p.ks(:,:,c), [numel(p.ks(:,:,c)) 1]);
     rejectedH0s = FDR_benjHoch(pval, 0.05, 'positive', true, false, false);
     hd(rejectedH0s) = 1;
-    h.FDR(:,:) = hd;
+    h.BH(:,:,c) = hd;
 end
+h.BH = h.BH(:,:,1) | h.BH(:,:,2);
+
+% MA FDR
+h.MA = zeros(N.ROI*(N.ROI-1)/2, N.modes, 2);
+for c = 1:2
+    hd = zeros(N.ROI*(N.ROI-1)/2, N.modes);
+    pval = reshape(p.ks(:,:,c), [numel(p.ks(:,:,c)) 1]);
+    fdr = mafdr(pval);
+    hd(fdr<0.05) = 1;
+    h.MA(:,:,c) = hd;
+end
+h.MA = h.MA(:,:,1) | h.MA(:,:,2);
 clear c m n hd rejectedH0s pval
 
 
 %% Visualize significant connections
 
-% FDR-significant connections
-if nnz(h.FDR) > 0
-    F(N.fig) = figure; N.fig = N.fig+1;
-    F(N.fig-1).OuterPosition = [1 1 1920 1080];
-    for m = 1:N.modes
-        if nnz(h.FDR(:,m)) > 0
-            subplot(2,3,m);
-            subplot(2,3,m);
-            f = icatb_vec2mat(h.FDR(:,m));
-            [r,c] = find(triu(f));
-            sm_mask = tril(icatb_vec2mat(zscore(Phi(:,ia(m)))));
-            display_FNC(real(sm_mask), [0.05 1.5]); hold on
-            scatter(c, r, 30, 'r', "square", "filled"); hold on
-            title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
-        end
-    end
-    sgtitle("Benjamini-Hochberg Correction");
-end
-clear f sm_mask s m c r
-
-%% Bonferroni-significant connections
+% Bonferroni-significant connections
 if nnz(h.BF) > 0
     F(N.fig) = figure; N.fig = N.fig+1;
     F(N.fig-1).OuterPosition = [1 1 1920 1080];
@@ -545,6 +537,46 @@ if nnz(h.BF) > 0
         end
     end
     sgtitle("Bonferroni Correction");
+end
+clear f sm_mask s m c r
+
+% Benjamini-Hochberg significant connections
+if nnz(h.BH) > 0
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for m = 1:N.modes
+        if nnz(h.BH(:,m)) > 0
+            subplot(2,3,m);
+            subplot(2,3,m);
+            f = icatb_vec2mat(h.BH(:,m));
+            [r,c] = find(triu(f));
+            sm_mask = tril(icatb_vec2mat(zscore(Phi(:,ia(m)))));
+            display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            scatter(c, r, 30, 'r', "square", "filled"); hold on
+            title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
+        end
+    end
+    sgtitle("Benjamini-Hochberg Correction");
+end
+clear f sm_mask s m c r
+
+% MA-FDR significant connections
+if nnz(h.MA) > 0
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for m = 1:N.modes
+        if nnz(h.MA(:,m)) > 0
+            subplot(2,3,m);
+            subplot(2,3,m);
+            f = icatb_vec2mat(h.MA(:,m));
+            [r,c] = find(triu(f));
+            sm_mask = tril(icatb_vec2mat(zscore(Phi(:,ia(m)))));
+            display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            scatter(c, r, 30, 'r', "square", "filled"); hold on
+            title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
+        end
+    end
+    sgtitle("False Discovery Rate Correction");
 end
 clear f sm_mask s m c r
 
@@ -571,20 +603,23 @@ clear c m s mlabel
 
 % Display the NBS
 col = ["r" "b"];
-F(N.fig) = figure; N.fig = N.fig+1;
-F(N.fig-1).OuterPosition = [1 1 1920 1080];
-for m = find(~cellfun(@isempty, storarray))
-    subplot(2,3,m); pbaspect([1 1 1]);
-    display_FNC(zeros(N.ROI), [0.05 1.5], [], false); hold on
-    for c = 1:size(n.(m){1,1},2)
-        [r, cl] = find(full(n.(m){1,1}{2,c}{:,:}));
-        k(c) = scatter(cl, r, 30, col(c), "square", "filled"); hold on
+l = find(~cellfun(@isempty, storarray));
+for t = 1:numel(tstat)
+    F(N.fig) = figure; N.fig = N.fig+1;
+    F(N.fig-1).OuterPosition = [1 1 1920 1080];
+    for m = 1:length(l)
+        subplot(2,3,l(m)); pbaspect([1 1 1]);
+        display_FNC(zeros(N.ROI), [0.05 1.5], [], false); hold on
+        for c = 1:2*nchoosek(2,2)
+            [r, cl] = find(full(nbs.(l(m)){1,1}.(c){t,1}));
+            k(c) = scatter(cl, r, 30, col(c), "square", "filled"); hold on
+        end
+        legend(k, nbs.(l(m)){1,1}.Properties.VariableNames);
+        title(strjoin(["Significant Connections of Mode", num2str(ia(l(m)))]));
     end
-    legend(k, n.(m){1,1}.Properties.VariableNames);
-    title(strjoin(["Significant Connections of Mode", num2str(ia(m))]));
+    sgtitle(["Network-Based Statistic", strjoin(["t-statistic:", num2str(tstat(t))])]);
 end
-sgtitle("Network-Based Statistic");
-clear m c col r cl k
+clear m c col r cl k l t
 
 
 %% Save results & figure(s)
@@ -595,7 +630,7 @@ for c = 1:N.fig-1
     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'svg');
     saveas(F(c), fullfile(pth{5}, "Images", strjoin([fileName, num2str(c)], '-')), 'jpeg');
 end
-clear c F a ax axes ts i
+clear c F a ax axes ts i ans
 
 % Save files
 N.fig = N.fig - 1;
