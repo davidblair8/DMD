@@ -480,14 +480,14 @@ clear c s m k
 %% Search for group-level changes in spatial maps
 
 % two-sample t-test
-[~,p.t2] = ttest2(sm_sep{1}, sm_sep{2});
+[~,p.t2,~,stats.t2] = ttest2(sm_sep{1}, sm_sep{2});
 p.t2 = squeeze(p.t2);
 
 % Kolmogorov-Smirnov test
 for m = 1:N.modes
     for n = 1:(N.ROI*(N.ROI-1)/2)
-        [~,p.ks(n,m,1)] = kstest2(real(squeeze(sm_sep{1}(:,n,m))), real(squeeze(sm_sep{2}(:,n,m))));
-        [~,p.ks(n,m,2)] = kstest2(imag(squeeze(sm_sep{1}(:,n,m))), imag(squeeze(sm_sep{2}(:,n,m))));
+        [~, p.ks(n,m,1), stats.k2(n,m,1)] = kstest2(real(squeeze(sm_sep{1}(:,n,m))), real(squeeze(sm_sep{2}(:,n,m))));
+        [~, p.ks(n,m,2), stats.k2(n,m,2)] = kstest2(imag(squeeze(sm_sep{1}(:,n,m))), imag(squeeze(sm_sep{2}(:,n,m))));
     end
 end
 
@@ -583,43 +583,59 @@ clear f sm_mask s m c r
 
 %% Network-Based Statistic
 
-% Calculate the NBS
-nbs = cell(N.modes, 1);
-STATS = cell(N.modes, 1);
-GLM = cell(N.modes, 1);
-storarray = cell(N.modes, 1);
+% add intercept term to index
 % i = horzcat(ones(sum(N.subjects{:,:}), 1), i);
-i = array2table(i, "VariableNames", labels.diagnosis);
+
+% Set directed NBS parameters
+GLM.perms = 10000;  		    % number of permutations (scalar)
+GLM.X = i;                      % design matrix (observations x conditions)
+GLM.test = 'ttest'; 	    	% type of statistical test to run ('ttest' or 'ftest')
+csig = ["Extent"; "Intensity"]; % method to measure size of cluster significance ('Intensity' or 'Extent')
+STATS.alpha = 0.025;            % significance level to test
+STATS.thresh = 4;               % threshold test statistic
 contrast = [1 -1; -1 1];
-tstat = [3 3.5];
-for m = 1:N.modes
-    mlabel(m) = strjoin(["Mode", num2str(ia(m))]);
-    EC = squeeze(sm(:,m,:));
-    EC = permute(icatb_vec2mat(EC'), [2 3 1]);
-    [nbs{m}, STATS{m}, GLM{m}, storarray{m}] = runNBS(EC, contrast, i, N, tstat, labels);
+nbs = cell(numel(csig), N.modes);
+storarray = cell(numel(csig), N.modes);
+
+% Calculate the NBS
+for s = 1:numel(csig)
+    STATS.size = csig(s);
+    for m = 1:N.modes
+        labels.modes(m) = strjoin(["Mode", num2str(ia(m))]);
+        EC = squeeze(sm(:,m,:));
+        EC = permute(icatb_vec2mat(EC'), [2 3 1]);
+        [nbs{s,m}, storarray{s,m}] = runNBS(EC, contrast, N, GLM, STATS, labels);
+    end
 end
-nbs = cell2table(nbs', "VariableNames",mlabel);
-clear c m s mlabel
+nbs = cell2table(nbs', "VariableNames",csig, "RowNames",labels.modes);
+clear c m s k
+save(fullfile(pth{5}, fileName), "nbs");
 
 % Display the NBS
 col = ["r" "b"];
-l = find(~cellfun(@isempty, storarray));
-for t = 1:numel(tstat)
-    F(N.fig) = figure; N.fig = N.fig+1;
-    F(N.fig-1).OuterPosition = [1 1 1920 1080];
-    for m = 1:length(l)
-        subplot(2,3,l(m)); pbaspect([1 1 1]);
-        display_FNC(zeros(N.ROI), [0.05 1.5], [], false); hold on
-        for c = 1:2*nchoosek(2,2)
-            [r, cl] = find(full(nbs.(l(m)){1,1}.(c){t,1}));
-            k(c) = scatter(cl, r, 30, col(c), "square", "filled"); hold on
+for s = 1:numel(csig)
+    for t = 1:numel(STATS.thresh)
+        F(N.fig) = figure; N.fig = N.fig+1;
+        F(N.fig-1).OuterPosition = [1 1 1920 1080];
+        for m = 1:numel(labels.modes)
+            subplot(2,3,m); pbaspect([1 1 1]);
+            sm_mask = real(tril(icatb_vec2mat(squeeze(stats.t2.tstat(:,:,m)))));
+            display_FNC(real(sm_mask), [0.05 1.5]); hold on
+            for c = 1:2*nchoosek(size(contrast,1), 2)
+                if ~cellfun(@isempty, nbs.(csig(s)){m,1}.(c))
+                    [r, cl] = find(full(nbs.(csig(s)){m,1}.(c){t,1}));
+                    i = (r < cl);
+                    r = r(i); cl = cl(i);
+                    k(c) = scatter(cl, r, 30, col(c), "square", "filled"); hold on
+                end
+            end
+            legend(k, nbs.(csig(s)){m,1}.Properties.VariableNames);
+            title(strjoin(["Significant Connections of", labels.modes(m)]));
         end
-        legend(k, nbs.(l(m)){1,1}.Properties.VariableNames);
-        title(strjoin(["Significant Connections of Mode", num2str(ia(l(m)))]));
+        sgtitle([csig(s), "Network-Based Statistic", strjoin(["t-statistic:", num2str(STATS.thresh(t))])]);
     end
-    sgtitle(["Network-Based Statistic", strjoin(["t-statistic:", num2str(tstat(t))])]);
 end
-clear m c col r cl k l t
+clear m c col r cl k l t sm_mask i s
 
 
 %% Save results & figure(s)
